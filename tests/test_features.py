@@ -85,6 +85,14 @@ def test_missing_required_columns_raise_value_error():
                 fn(df)
 
 
+def test_extract_auc_validates_before_numpy_fallback_resolution(monkeypatch):
+    df = _tidy_df().drop(columns=["row"])
+    monkeypatch.delattr("rosettier.features.np.trapezoid", raising=False)
+    monkeypatch.delattr("rosettier.features.np.trapz", raising=False)
+    with pytest.raises(ValueError, match="Missing required columns"):
+        extract_auc(df)
+
+
 def test_no_mutation():
     df = _tidy_df()
     before = df.copy(deep=True)

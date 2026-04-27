@@ -65,6 +65,10 @@ def extract_endpoint(df: pd.DataFrame) -> pd.DataFrame:
 
 def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
     """Return AUC per well using trapezoidal integration over non-missing points."""
+    base = _prepare(df)
+    trap = getattr(np, "trapezoid", None)
+    if trap is None:
+        trap = getattr(np, "trapz")
     trap = getattr(np, "trapezoid", np.trapz)
 
     def auc_for_well(group: pd.DataFrame) -> float:
@@ -73,6 +77,7 @@ def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
             return float("nan")
         return float(trap(observed["value"].to_numpy(), observed["time"].to_numpy()))
 
+    return _per_well_feature(base, "auc", auc_for_well)
     return _per_well_feature(df, "auc", auc_for_well)
 
 
