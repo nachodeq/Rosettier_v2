@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+import inspect
 
 from rosettier.features import (
     extract_auc,
@@ -99,6 +100,11 @@ def test_extract_auc_uses_internal_fallback_when_numpy_integrators_missing(monke
     monkeypatch.delattr("rosettier.features.np.trapz", raising=False)
     out = extract_auc(df).set_index("well")
     assert out.loc["A01", "auc"] == 2.0
+
+
+def test_extract_auc_source_does_not_reference_np_trapz():
+    source = inspect.getsource(extract_auc)
+    assert "np.trapz" not in source
 
 
 def test_no_mutation():
