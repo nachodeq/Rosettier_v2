@@ -2,10 +2,80 @@
 
 from __future__ import annotations
 
+from io import StringIO
+import re
+
 import pandas as pd
 
 from .exceptions import DuplicatedTimepointError, NonNumericMeasurementError
-from .plates import PlateSpec, infer_plate_size, validate_complete_well_set
+from .plates import PlateSpec, infer_plate_size, normalize_well, validate_complete_well_set
+
+_TIME_HMS_PATTERN = re.compile(r"^\s*(?:(\d+):)?(\d+):(\d+(?:[.,]\d+)?)\s*$")
+
+
+def _resolve_delimiter(delimiter: str) -> str | None:
+    options = {"auto": None, "tab": "\t", "comma": ",", "semicolon": ";"}
+    if delimiter not in options:
+        raise ValueError(f"Unsupported delimiter setting: {delimiter}")
+    return options[delimiter]
+
+
+def _normalize_decimal_text(value: object, decimal: str) -> object:
+    if pd.isna(value):
+        return value
+
+    text = str(value).strip()
+    if text == "":
+        return pd.NA
+
+    if decimal == "comma":
+        return text.replace(".", "").replace(",", ".")
+    if decimal == "point":
+        return text.replace(",", "")
+    if decimal == "auto":
+        has_comma = "," in text
+        has_point = "." in text
+        if has_comma and has_point:
+            return text.replace(",", "")
+        if has_comma and not has_point:
+            return text.replace(",", ".")
+        return text
+
+    raise ValueError(f"Unsupported decimal setting: {decimal}")
+
+
+def _parse_elapsed_minutes(time_series: pd.Series, decimal: str) -> pd.Series:
+    parsed_values: list[float] = []
+    for raw in time_series:
+        if pd.isna(raw):
+            raise ValueError("Time column contains missing values.")
+
+        text = str(raw).strip()
+        if text == "":
+            raise ValueError("Time column contains blank values.")
+
+        hms_match = _TIME_HMS_PATTERN.match(text)
+        if hms_match:
+            hour_group, minute_group, second_group = hms_match.groups()
+            hours = int(hour_group) if hour_group is not None else 0
+            minutes = int(minute_group)
+            seconds_text = _normalize_decimal_text(second_group, decimal=decimal)
+            try:
+                seconds = float(seconds_text)  # type: ignore[arg-type]
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Unable to parse time value: {raw!r}") from exc
+            parsed_values.append((hours * 60.0) + minutes + (seconds / 60.0))
+            continue
+
+        normalized_text = _normalize_decimal_text(text, decimal=decimal)
+        try:
+            parsed_values.append(float(normalized_text))  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Unable to parse time value: {raw!r}") from exc
+
+    elapsed = pd.Series(parsed_values, index=time_series.index, dtype="float64")
+    elapsed = elapsed - float(elapsed.iloc[0])
+    return elapsed
 
 
 def _coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
@@ -83,3 +153,69 @@ def infer_plate_from_dataframe(df: pd.DataFrame, time_col: str = "time") -> Plat
     """Infer plate format from well columns in a wide dataframe."""
     wells = [c for c in df.columns if c != time_col]
     return infer_plate_size(wells)
+
+
+def parse_plate_reader_wide(
+    source: pd.DataFrame | str,
+    plate_size: int,
+    *,
+    time_col: str = "Time",
+    delimiter: str = "auto",
+    decimal: str = "auto",
+) -> pd.DataFrame:
+    """Parse plate-reader wide tables into canonical tidy format.
+
+    The parser supports 96-well and 384-well column layouts, user-controlled
+    delimiter and decimal handling, and deterministic conversion of time values
+    into elapsed minutes.
+    """
+    if isinstance(source, pd.DataFrame):
+        raw = source.copy()
+    else:
+        sep = _resolve_delimiter(delimiter)
+        if sep is None:
+            raw = pd.read_csv(StringIO(source), sep=None, engine="python", dtype=str)
+        else:
+            raw = pd.read_csv(StringIO(source), sep=sep, dtype=str)
+
+    if time_col not in raw.columns:
+        raise KeyError(f"Missing time column: {time_col}")
+
+    spec = PlateSpec.from_size(plate_size)
+    rename_map: dict[str, str] = {}
+    well_cols: list[str] = []
+    for column in raw.columns:
+        if column == time_col:
+            continue
+        try:
+            canonical = normalize_well(str(column), spec=spec)
+        except Exception:
+            continue
+        rename_map[column] = canonical
+        well_cols.append(column)
+
+    validate_complete_well_set([rename_map[col] for col in well_cols], plate_size=plate_size)
+
+    working = raw.rename(columns=rename_map)
+    ordered_wells = PlateSpec.from_size(plate_size).canonical_wells()
+    well_values = working[ordered_wells].apply(lambda col: col.map(lambda value: _normalize_decimal_text(value, decimal=decimal)))
+
+    try:
+        numeric_values = _coerce_numeric(well_values)
+    except NonNumericMeasurementError as exc:
+        raise NonNumericMeasurementError("Failed to parse measurement values with selected decimal setting.") from exc
+
+    elapsed_minutes = _parse_elapsed_minutes(working[time_col], decimal=decimal)
+    if elapsed_minutes.duplicated().any():
+        raise DuplicatedTimepointError("Timepoints must not be duplicated after parsing.")
+
+    tidy = pd.concat([elapsed_minutes.rename("time"), numeric_values], axis=1).melt(
+        id_vars=["time"],
+        value_vars=ordered_wells,
+        var_name="well",
+        value_name="value",
+    )
+    tidy["row"] = tidy["well"].str[0]
+    tidy["column"] = tidy["well"].str[1:].astype(int)
+    tidy = tidy[["well", "row", "column", "time", "value"]]
+    return tidy.sort_values(["time", "well"]).reset_index(drop=True)
