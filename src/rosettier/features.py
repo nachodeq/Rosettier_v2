@@ -69,6 +69,7 @@ def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
     trap = getattr(np, "trapezoid", None)
     if trap is None:
         trap = getattr(np, "trapz")
+    trap = getattr(np, "trapezoid", np.trapz)
 
     def auc_for_well(group: pd.DataFrame) -> float:
         observed = group.dropna(subset=["value"])
@@ -77,6 +78,7 @@ def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
         return float(trap(observed["value"].to_numpy(), observed["time"].to_numpy()))
 
     return _per_well_feature(base, "auc", auc_for_well)
+    return _per_well_feature(df, "auc", auc_for_well)
 
 
 def extract_max_slope(df: pd.DataFrame) -> pd.DataFrame:
