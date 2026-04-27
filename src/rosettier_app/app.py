@@ -64,6 +64,33 @@ def _assign_value_to_wells(
     return out[_ordered_rosetta_columns(out)]
 
 
+def _copy_rosetta_editor_plate_state(st, source_prefix: str, destination_prefix: str, destination_widget_prefix: str) -> None:
+    """Copy one plate editor's Rosetta state to another editor without mutating source state."""
+    source_df_key = f"{source_prefix}_df"
+    source_variables_key = f"{source_prefix}_variables"
+    source_selected_key = f"{source_prefix}_selected_wells"
+
+    destination_df_key = f"{destination_prefix}_df"
+    destination_variables_key = f"{destination_prefix}_variables"
+    destination_selected_key = f"{destination_prefix}_selected_wells"
+
+    if source_df_key not in st.session_state:
+        raise KeyError(f"Source plate state not initialized: {source_prefix}")
+
+    source_df = st.session_state[source_df_key].copy(deep=True)
+    inferred_source_variables = [c for c in source_df.columns if c not in {"well", "row", "column"}]
+    source_variables = list(st.session_state.get(source_variables_key, inferred_source_variables))
+    source_selected_wells = list(st.session_state.get(source_selected_key, []))
+
+    st.session_state[destination_df_key] = source_df
+    st.session_state[destination_variables_key] = source_variables
+    st.session_state[destination_selected_key] = source_selected_wells
+
+    # Reset destination widget selections that depend on variables/options.
+    st.session_state.pop(f"{destination_widget_prefix}_viz", None)
+    st.session_state.pop(f"{destination_widget_prefix}_assign_variable", None)
+
+
 def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells: list[str], color_variable: str | None):
     """Create a Plotly plate figure for interactive well selection."""
     import plotly.graph_objects as go
@@ -223,7 +250,14 @@ def _combine_four_96_rosettas(rosetta_tables: list[pd.DataFrame]) -> pd.DataFram
     return combined_df[_ordered_rosetta_columns(combined_df)]
 
 
-def _render_rosetta_editor(st, plate_size: int, state_prefix: str, widget_prefix: str, show_table: bool = True) -> pd.DataFrame:
+def _render_rosetta_editor(
+    st,
+    plate_size: int,
+    state_prefix: str,
+    widget_prefix: str,
+    show_table: bool = True,
+    copy_sources: list[tuple[str, str]] | None = None,
+) -> pd.DataFrame:
     """Render a reusable Rosetta editor and return its current table."""
     _init_rosetta_editor_state(st, state_prefix=state_prefix, plate_size=plate_size)
 
@@ -235,6 +269,24 @@ def _render_rosetta_editor(st, plate_size: int, state_prefix: str, widget_prefix
     variables = st.session_state[variables_key]
     selected_wells = st.session_state.get(selected_key, [])
     spec = PlateSpec.from_size(plate_size)
+
+    if copy_sources:
+        source_labels = [label for label, _ in copy_sources]
+        selected_source_label = st.selectbox(
+            "Copy full plate setup from",
+            options=source_labels,
+            key=f"{widget_prefix}_copy_source",
+        )
+        selected_source_prefix = dict(copy_sources)[selected_source_label]
+        if st.button(f"Copy from {selected_source_label}", key=f"{widget_prefix}_copy_button"):
+            _copy_rosetta_editor_plate_state(
+                st,
+                source_prefix=selected_source_prefix,
+                destination_prefix=state_prefix,
+                destination_widget_prefix=widget_prefix,
+            )
+            st.success(f"Copied full Rosetta setup from {selected_source_label}.")
+            st.rerun()
 
     viz_options = ["None", *variables]
     selected_viz_label = st.selectbox(
@@ -330,17 +382,28 @@ def _render_create_rosetta(st, plate_size: int) -> None:
         )
         return
 
-    st.caption("Legacy-compatible mapping: Plate1→(0,0), Plate2→(0,1), Plate3→(1,0), Plate4→(1,1).")
+    st.caption(
+        "Important note: when combining four 96-well plates into one 384-well Rosetta, "
+        "A1 of the 384-well plate corresponds to A1 from Plate 1, A2 corresponds to A1 from Plate 2, "
+        "B1 corresponds to A1 from Plate 3, and B2 corresponds to A1 from Plate 4. "
+        "The same interleaving pattern is applied across the entire plate."
+    )
     tab_labels = ["Plate 1 (96)", "Plate 2 (96)", "Plate 3 (96)", "Plate 4 (96)"]
     tabs = st.tabs(tab_labels)
     for idx, tab in enumerate(tabs, start=1):
         with tab:
             st.subheader(f"Rosetta editor for Plate {idx}")
+            copy_sources = [
+                (f"Plate {source_idx}", f"combine_plate_{source_idx}")
+                for source_idx in range(1, 5)
+                if source_idx != idx
+            ]
             _render_rosetta_editor(
                 st,
                 plate_size=96,
                 state_prefix=f"combine_plate_{idx}",
                 widget_prefix=f"combine_plate_{idx}",
+                copy_sources=copy_sources,
             )
 
     if st.button("Combine into 384 Rosetta", key="combine_rosettas_384"):
