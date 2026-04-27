@@ -66,6 +66,13 @@ def test_wide_to_long_works_and_preserves_plate_completeness():
     wide = parse_timeseries_wide(_wide_df(96), plate_size=96)
     long_df = wide_to_long(wide, plate_size=96)
     assert len(long_df) == 96 * 2
+    assert "value" in long_df.columns
+
+
+def test_wide_to_long_supports_legacy_measurement_name():
+    wide = parse_timeseries_wide(_wide_df(96), plate_size=96)
+    long_df = wide_to_long(wide, plate_size=96, value_name="measurement")
+    assert "measurement" in long_df.columns
 
 
 def test_wide_to_long_rejects_partial_plate():
