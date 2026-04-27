@@ -6,7 +6,7 @@ from io import StringIO
 
 import pandas as pd
 
-from rosettier.features import extract_features
+from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_time_to_threshold
 from rosettier.io import parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec, validate_complete_well_set
@@ -443,9 +443,73 @@ def _render_create_rosetta(st, plate_size: int) -> None:
     )
 
 
+_FEATURE_LABELS = {
+    "endpoint": "Endpoint",
+    "auc": "AUC",
+    "max_slope": "Max slope",
+    "time_to_threshold": "Time to threshold",
+}
+
+
+def _filter_tidy_by_time_window(
+    tidy_df: pd.DataFrame,
+    *,
+    enable_time_filter: bool,
+    min_time: float | None,
+    max_time: float | None,
+) -> pd.DataFrame:
+    """Return a filtered tidy table without mutating the input dataframe."""
+    out = tidy_df.copy()
+    if not enable_time_filter:
+        return out
+    if min_time is not None:
+        out = out.loc[out["time"] >= float(min_time)]
+    if max_time is not None:
+        out = out.loc[out["time"] <= float(max_time)]
+    return out.reset_index(drop=True)
+
+
+def _compute_selected_features(
+    feature_source: pd.DataFrame,
+    *,
+    selected_features: list[str],
+    threshold: float | None,
+    signal_name: str,
+) -> pd.DataFrame:
+    """Compute selected feature set and rename feature columns with signal name."""
+    if not selected_features:
+        return pd.DataFrame(columns=["well", "row", "column"])
+
+    frames: list[pd.DataFrame] = []
+    for feature in selected_features:
+        if feature == "endpoint":
+            frames.append(extract_endpoint(feature_source)[["well", "endpoint"]])
+        elif feature == "auc":
+            frames.append(extract_auc(feature_source)[["well", "auc"]])
+        elif feature == "max_slope":
+            frames.append(extract_max_slope(feature_source)[["well", "max_slope"]])
+        elif feature == "time_to_threshold":
+            if threshold is None:
+                raise ValueError("Threshold must be provided when selecting time to threshold.")
+            frames.append(extract_time_to_threshold(feature_source, threshold=threshold)[["well", "time_to_threshold"]])
+        else:  # pragma: no cover - defensive guard for UI options
+            raise ValueError(f"Unsupported feature selection: {feature}")
+
+    feature_table = feature_source[["well", "row", "column"]].drop_duplicates().sort_values("well")
+    for frame in frames:
+        feature_table = feature_table.merge(frame, on="well", how="left")
+
+    normalized_signal_name = str(signal_name).strip() or "OD"
+    rename_map = {feature: f"{normalized_signal_name}_{feature}" for feature in selected_features}
+    return feature_table.rename(columns=rename_map).reset_index(drop=True)
+
+
 def _render_analyze_data(st, plate_size: int) -> None:
-    """Mode: validate, parse, QC and feature placeholders."""
+    """Mode: validate, parse, configure analysis, QC, and feature exports."""
     st.header("Analyze Data")
+
+    if "analyze_results" not in st.session_state:
+        st.session_state["analyze_results"] = {}
 
     session_rosetta_available = "rosetta_df" in st.session_state
 
@@ -460,6 +524,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
     rosetta_source = st.radio(
         "Choose Rosetta source",
         options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV"],
+        key="analyze_rosetta_source",
     )
     if rosetta_source == "Use current session Rosetta" and not session_rosetta_available:
         st.info("No Rosetta exists in this session yet. Switch to Create Rosetta mode or upload a Rosetta file.")
@@ -472,65 +537,135 @@ def _render_analyze_data(st, plate_size: int) -> None:
             key="layout_upload",
         )
 
-    delimiter_choice = st.selectbox("Delimiter", options=["auto", "tab", "comma", "semicolon"], index=0)
-    decimal_choice = st.selectbox("Decimal separator", options=["auto", "comma", "point"], index=0)
-    time_column_name = st.text_input("Time column name", value="Time")
-    run_analysis = st.button("Run analysis", type="primary")
+    delimiter_choice = st.selectbox("Delimiter", options=["auto", "tab", "comma", "semicolon"], index=0, key="analyze_delimiter")
+    decimal_choice = st.selectbox("Decimal separator", options=["auto", "comma", "point"], index=0, key="analyze_decimal")
+    time_column_name = st.text_input("Time column name", value="Time", key="analyze_time_column")
+
+    st.subheader("3. Analysis setup")
+    signal_name = st.text_input("Signal name", value="OD", help="Examples: OD, GFP, RFP, luminescence.", key="analyze_signal_name")
+    enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
+    min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
+    max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
+    selected_features = st.multiselect(
+        "Features to compute",
+        options=["endpoint", "auc", "max_slope", "time_to_threshold"],
+        default=["endpoint", "auc", "max_slope"],
+        format_func=lambda x: _FEATURE_LABELS.get(x, x),
+        key="analyze_selected_features",
+    )
+    threshold: float | None = None
+    if "time_to_threshold" in selected_features:
+        threshold = float(st.number_input("Threshold (for time to threshold)", value=0.5, step=0.1, key="analyze_threshold"))
+
+    run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
+    if run_analysis:
+        if measurement_file is None:
+            st.info("Upload measurements to run validation and parsing.")
+        elif enable_time_filter and min_time > max_time:
+            st.error("Time filter is enabled, but min time is greater than max time.")
+        elif "time_to_threshold" in selected_features and threshold is None:
+            st.error("Provide a threshold when selecting time to threshold.")
+        else:
+            layout_df: pd.DataFrame | None
+            if rosetta_source == "Use current session Rosetta" and session_rosetta_available:
+                layout_df = st.session_state["rosetta_df"].copy()
+            elif rosetta_source == "Upload existing Rosetta CSV/TSV" and layout_file is not None:
+                layout_df = _read_uploaded_table(layout_file)
+            else:
+                layout_df = None
+
+            sanitized_signal_name = signal_name.strip() or "OD"
+            layout_well_column = None
+            if layout_df is not None:
+                layout_well_column = "well" if "well" in layout_df.columns else "Well"
+
+            config = {
+                "signal_name": sanitized_signal_name,
+                "enable_time_filter": enable_time_filter,
+                "min_time": float(min_time),
+                "max_time": float(max_time),
+                "selected_features": selected_features,
+                "threshold": threshold,
+            }
+
+            st.session_state["analyze_results"] = {"config": config}
+
+            measurement_text = measurement_file.getvalue().decode("utf-8")
+            st.session_state["analyze_results"]["measurement_text"] = measurement_text
+            st.session_state["analyze_results"]["layout_df"] = layout_df
+            st.session_state["analyze_results"]["layout_well_column"] = layout_well_column
+            st.session_state["analyze_results"]["errors"] = []
+
+    results = st.session_state["analyze_results"]
 
     tidy_df: pd.DataFrame | None = None
+    filtered_tidy_df: pd.DataFrame | None = None
     merged_df: pd.DataFrame | None = None
     features_df: pd.DataFrame | None = None
     qc: dict | None = None
+    config = results.get("config")
 
-    st.subheader("3. Validate and parse")
-    if not run_analysis:
-        st.info("Configure parser settings and click 'Run analysis'.")
-    elif measurement_file is None:
-        st.info("Upload measurements to run validation and parsing.")
+    st.subheader("4. Validate and parse")
+    if "measurement_text" not in results:
+        st.info("Configure analysis setup and click 'Run analysis'.")
     else:
         try:
-            measurement_text = measurement_file.getvalue().decode("utf-8")
             tidy_df = parse_plate_reader_wide(
-                measurement_text,
+                results["measurement_text"],
                 plate_size=plate_size,
                 time_col=time_column_name,
                 delimiter=delimiter_choice,
                 decimal=decimal_choice,
             )
+            filtered_tidy_df = _filter_tidy_by_time_window(
+                tidy_df,
+                enable_time_filter=bool(config.get("enable_time_filter")) if config else False,
+                min_time=config.get("min_time") if config else None,
+                max_time=config.get("max_time") if config else None,
+            )
             st.success("Measurements validated and parsed to canonical tidy format.")
+            st.caption(f"Preview only (first 12 rows) of {len(tidy_df)} parsed rows.")
             st.dataframe(tidy_df.head(12), use_container_width=True)
+            st.write(
+                f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
+                f"{tidy_df['time'].nunique()} timepoints, time range {tidy_df['time'].min()} to {tidy_df['time'].max()} minutes."
+            )
+            if config:
+                st.write(
+                    f"Selected analysis range: {config['min_time']} to {config['max_time']} minutes "
+                    f"(filter {'enabled' if config['enable_time_filter'] else 'disabled'})."
+                )
+            st.write(
+                f"Rows/timepoints after selection: {len(filtered_tidy_df)} rows, "
+                f"{filtered_tidy_df['time'].nunique()} timepoints."
+            )
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to parse measurements: {exc}")
 
-    if tidy_df is not None:
-        if rosetta_source == "Use current session Rosetta" and session_rosetta_available:
-            layout_df = st.session_state["rosetta_df"].copy()
-        elif rosetta_source == "Upload existing Rosetta CSV/TSV" and layout_file is not None:
-            layout_df = _read_uploaded_table(layout_file)
-        else:
-            layout_df = None
-
+    if filtered_tidy_df is not None:
+        layout_df = results.get("layout_df")
+        layout_well_column = results.get("layout_well_column")
         if layout_df is not None:
             try:
-                well_column = "well" if "well" in layout_df.columns else "Well"
-                validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=well_column)
+                validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=layout_well_column)
                 merged_df = merge_measurements_with_layout(
-                    tidy_df,
+                    filtered_tidy_df,
                     validated_layout,
                     plate_size=plate_size,
-                    layout_well_col=well_column,
+                    layout_well_col=layout_well_column,
                 )
                 st.success("Rosetta/layout validated and merged.")
+                st.caption(f"Merged preview only (first 12 rows) of {len(merged_df)} rows.")
                 st.dataframe(merged_df.head(12), use_container_width=True)
             except Exception as exc:  # pragma: no cover - defensive streamlit display
                 st.error(f"Failed to validate/merge Rosetta layout: {exc}")
 
-    st.subheader("4. QC summary")
-    if tidy_df is None:
+    st.subheader("5. QC summary")
+    if filtered_tidy_df is None:
         st.info("QC summary will appear after successful parsing.")
     else:
         try:
-            qc = qc_summary(tidy_df)
+            qc = qc_summary(filtered_tidy_df)
             overall = qc["missing"]["overall"]
             st.dataframe(overall, use_container_width=True)
             st.dataframe(qc["constant_wells"].head(12), use_container_width=True)
@@ -539,75 +674,93 @@ def _render_analyze_data(st, plate_size: int) -> None:
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to compute QC summary: {exc}")
 
-    st.subheader("5. Feature extraction")
-    if tidy_df is None:
+    st.subheader("6. Feature extraction")
+    if filtered_tidy_df is None:
         st.info("Feature extraction results will appear after successful parsing.")
     else:
         try:
-            feature_source = merged_df if merged_df is not None else tidy_df
-            features_df = extract_features(feature_source)
-            st.dataframe(features_df.head(12), use_container_width=True)
+            feature_source = merged_df if merged_df is not None else filtered_tidy_df
+            features_df = _compute_selected_features(
+                feature_source,
+                selected_features=config.get("selected_features", []) if config else [],
+                threshold=config.get("threshold") if config else None,
+                signal_name=config.get("signal_name", "OD") if config else "OD",
+            )
+            st.write(f"Signal: **{config.get('signal_name', 'OD') if config else 'OD'}**")
+            if features_df.shape[1] == 3:
+                st.info("No features selected.")
+            else:
+                st.dataframe(features_df.head(12), use_container_width=True)
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to extract features: {exc}")
 
-    st.subheader("6. Results / Export")
-    if tidy_df is None:
+    st.subheader("7. Results / Export")
+    if filtered_tidy_df is None:
         st.info("Results/export placeholders will activate after parsing.")
         return
 
-    st.caption("Download parsed tidy measurements and (if available) extracted features.")
+    signal_slug = (config.get("signal_name", "OD") if config else "OD").strip().replace(" ", "_")
+    st.caption("Download parsed tidy measurements, merged data, selected features, and QC tables.")
     st.download_button(
         label="Download tidy (CSV)",
-        data=tidy_df.to_csv(index=False),
-        file_name="rosettier_tidy.csv",
+        data=filtered_tidy_df.to_csv(index=False),
+        file_name=f"rosettier_tidy_{signal_slug}.csv",
         mime="text/csv",
+        key="download_tidy_csv",
     )
     if merged_df is not None:
         st.download_button(
             label="Download merged data (CSV)",
             data=merged_df.to_csv(index=False),
-            file_name="rosettier_merged.csv",
+            file_name=f"rosettier_merged_{signal_slug}.csv",
             mime="text/csv",
+            key="download_merged_csv",
         )
 
     if qc is not None:
         st.download_button(
             label="Download QC missing overall (CSV)",
             data=qc["missing"]["overall"].to_csv(index=False),
-            file_name="rosettier_qc_missing_overall.csv",
+            file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
             mime="text/csv",
+            key="download_qc_missing_overall_csv",
         )
         st.download_button(
             label="Download QC missing per well (CSV)",
             data=qc["missing"]["per_well"].to_csv(index=False),
-            file_name="rosettier_qc_missing_per_well.csv",
+            file_name=f"rosettier_qc_missing_per_well_{signal_slug}.csv",
             mime="text/csv",
+            key="download_qc_missing_per_well_csv",
         )
         st.download_button(
             label="Download QC constant wells (CSV)",
             data=qc["constant_wells"].to_csv(index=False),
-            file_name="rosettier_qc_constant_wells.csv",
+            file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
             mime="text/csv",
+            key="download_qc_constant_wells_csv",
         )
         st.download_button(
             label="Download QC outlier wells (CSV)",
             data=qc["outlier_wells"].to_csv(index=False),
-            file_name="rosettier_qc_outlier_wells.csv",
+            file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
             mime="text/csv",
+            key="download_qc_outlier_wells_csv",
         )
         st.download_button(
             label="Download QC edge effects (CSV)",
             data=qc["edge_effects"].to_csv(index=False),
-            file_name="rosettier_qc_edge_effects.csv",
+            file_name=f"rosettier_qc_edge_effects_{signal_slug}.csv",
             mime="text/csv",
+            key="download_qc_edge_effects_csv",
         )
 
-    if features_df is not None:
+    if features_df is not None and features_df.shape[1] > 3:
         st.download_button(
             label="Download features (CSV)",
             data=features_df.to_csv(index=False),
-            file_name="rosettier_features.csv",
+            file_name=f"rosettier_features_{signal_slug}.csv",
             mime="text/csv",
+            key="download_features_csv",
         )
 
 
@@ -626,8 +779,8 @@ def main() -> None:
     st.caption("App shell with two modes. Core scientific logic remains in `rosettier` modules.")
 
     st.sidebar.header("Settings")
-    plate_size = st.sidebar.selectbox("Plate size", options=[96, 384], index=0)
-    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta", "Analyze Data"], index=0)
+    plate_size = st.sidebar.selectbox("Plate size", options=[96, 384], index=0, key="sidebar_plate_size")
+    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta", "Analyze Data"], index=0, key="sidebar_mode")
 
     if mode == "Create Rosetta":
         _render_create_rosetta(st, plate_size=plate_size)

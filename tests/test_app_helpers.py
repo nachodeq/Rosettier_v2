@@ -39,3 +39,61 @@ def test_selected_wells_from_event_maps_point_indices_to_wells():
     event = {"selection": {"points": [{"point_index": 0}, {"point_index": 2}]}}
     wells = app._selected_wells_from_event(event, rosetta_df)
     assert wells == ["A01", "A03"]
+
+
+def test_filter_tidy_by_time_window_applies_bounds_without_mutating_input():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A01", "A01"],
+            "row": ["A", "A", "A"],
+            "column": [1, 1, 1],
+            "time": [0.0, 10.0, 20.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._filter_tidy_by_time_window(tidy, enable_time_filter=True, min_time=5.0, max_time=15.0)
+    assert list(out["time"]) == [10.0]
+    assert list(tidy["time"]) == [0.0, 10.0, 20.0]
+
+
+def test_compute_selected_features_returns_only_requested_and_renamed_columns():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A01", "A02", "A02"],
+            "row": ["A", "A", "A", "A"],
+            "column": [1, 1, 2, 2],
+            "time": [0.0, 1.0, 0.0, 1.0],
+            "value": [0.0, 1.0, 0.5, 0.75],
+        }
+    )
+    out = app._compute_selected_features(
+        tidy,
+        selected_features=["endpoint", "max_slope"],
+        threshold=None,
+        signal_name="GFP",
+    )
+    assert {"well", "row", "column", "GFP_endpoint", "GFP_max_slope"} == set(out.columns)
+    assert "GFP_time_to_threshold" not in out.columns
+
+
+def test_compute_selected_features_requires_threshold_for_time_to_threshold():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A01"],
+            "row": ["A", "A"],
+            "column": [1, 1],
+            "time": [0.0, 1.0],
+            "value": [0.0, 1.0],
+        }
+    )
+    try:
+        app._compute_selected_features(
+            tidy,
+            selected_features=["time_to_threshold"],
+            threshold=None,
+            signal_name="OD",
+        )
+    except ValueError as exc:
+        assert "Threshold must be provided" in str(exc)
+    else:  # pragma: no cover - explicit failure branch
+        raise AssertionError("Expected ValueError when threshold is missing.")
