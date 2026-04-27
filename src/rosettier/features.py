@@ -7,25 +7,23 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-_REQUIRED_COLUMNS = ("well", "row", "column", "time", "value")
+from .exceptions import SchemaValidationError
+from .schema import CANONICAL_TIDY_COLUMNS, ensure_canonical_tidy
 
 
-def _validate_required_columns(df: pd.DataFrame) -> None:
-    missing = [col for col in _REQUIRED_COLUMNS if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+_REQUIRED_COLUMNS = CANONICAL_TIDY_COLUMNS
 
 
 def _validate_no_duplicate_timepoints(df: pd.DataFrame) -> None:
     duplicated = df.duplicated(subset=["well", "time"], keep=False)
     if duplicated.any():
-        raise ValueError("Duplicate timepoints detected within at least one well")
+        raise SchemaValidationError("Duplicate timepoints detected within at least one well")
 
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
-    _validate_required_columns(df)
-    _validate_no_duplicate_timepoints(df)
-    return df.sort_values(["well", "time"]).copy()
+    canonical = ensure_canonical_tidy(df)
+    _validate_no_duplicate_timepoints(canonical)
+    return canonical.sort_values(["well", "time"]).copy()
 
 
 def _fallback_trapezoid(y: np.ndarray, x: np.ndarray) -> float:

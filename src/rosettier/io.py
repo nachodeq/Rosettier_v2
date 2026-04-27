@@ -56,7 +56,12 @@ def parse_endpoint(df: pd.DataFrame, plate_size: int, time_col: str = "time", de
     return parse_timeseries_wide(endpoint, plate_size=plate_size, time_col=time_col)
 
 
-def wide_to_long(df: pd.DataFrame, plate_size: int, time_col: str = "time") -> pd.DataFrame:
+def wide_to_long(
+    df: pd.DataFrame,
+    plate_size: int,
+    time_col: str = "time",
+    value_name: str = "value",
+) -> pd.DataFrame:
     """Convert validated wide time-series data to tidy/long format."""
     if time_col not in df.columns:
         raise KeyError(f"Missing time column: {time_col}")
@@ -68,9 +73,9 @@ def wide_to_long(df: pd.DataFrame, plate_size: int, time_col: str = "time") -> p
         id_vars=[time_col],
         value_vars=PlateSpec.from_size(plate_size).canonical_wells(),
         var_name="well",
-        value_name="measurement",
+        value_name=value_name,
     )
-    long_df["measurement"] = _coerce_numeric(long_df[["measurement"]])["measurement"]
+    long_df[value_name] = _coerce_numeric(long_df[[value_name]])[value_name]
     return long_df.sort_values([time_col, "well"]).reset_index(drop=True)
 
 
