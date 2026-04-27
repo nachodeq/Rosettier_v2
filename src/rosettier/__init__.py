@@ -20,6 +20,7 @@ from .features import (
 )
 from .io import infer_plate_from_dataframe, parse_endpoint, parse_timeseries_wide, wide_to_long
 from .layout import load_layout, merge_measurements_with_layout
+from .pipeline import run_pipeline, validate_pipeline_inputs
 from .plates import PlateSpec, infer_plate_size, normalize_well, normalize_wells, validate_complete_well_set
 from .qc import (
     detect_constant_wells,
@@ -75,4 +76,6 @@ __all__ = [
     "normalize_measurement_column",
     "enrich_well_coordinates",
     "ensure_canonical_tidy",
+    "validate_pipeline_inputs",
+    "run_pipeline",
 ]
