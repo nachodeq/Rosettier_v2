@@ -76,6 +76,7 @@ def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
     base = _prepare(df)
     trap = getattr(np, "trapezoid", None)
     if trap is None:
+        trap = _fallback_trapezoid
         trap = getattr(np, "trapz", None)
     if trap is None:
         trap = _fallback_trapezoid
