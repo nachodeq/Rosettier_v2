@@ -7,7 +7,7 @@ from io import StringIO
 import pandas as pd
 
 from rosettier.features import extract_features
-from rosettier.io import parse_endpoint, parse_timeseries_wide, wide_to_long
+from rosettier.io import parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec, validate_complete_well_set
 from rosettier.qc import qc_summary
@@ -15,12 +15,8 @@ from rosettier.qc import qc_summary
 
 def _read_uploaded_table(uploaded_file) -> pd.DataFrame:
     """Read CSV/TSV uploads without mutating app state."""
-    suffix = uploaded_file.name.lower()
     text = uploaded_file.getvalue().decode("utf-8")
-
-    if suffix.endswith(".tsv"):
-        return pd.read_csv(StringIO(text), sep="\t")
-    return pd.read_csv(StringIO(text))
+    return pd.read_csv(StringIO(text), sep=None, engine="python")
 
 
 def _build_rosetta_table(spec: PlateSpec) -> pd.DataFrame:
@@ -476,24 +472,31 @@ def _render_analyze_data(st, plate_size: int) -> None:
             key="layout_upload",
         )
 
-    parsed_wide: pd.DataFrame | None = None
+    delimiter_choice = st.selectbox("Delimiter", options=["auto", "tab", "comma", "semicolon"], index=0)
+    decimal_choice = st.selectbox("Decimal separator", options=["auto", "comma", "point"], index=0)
+    time_column_name = st.text_input("Time column name", value="Time")
+    run_analysis = st.button("Run analysis", type="primary")
+
     tidy_df: pd.DataFrame | None = None
+    merged_df: pd.DataFrame | None = None
     features_df: pd.DataFrame | None = None
+    qc: dict | None = None
 
     st.subheader("3. Validate and parse")
-    if measurement_file is None:
+    if not run_analysis:
+        st.info("Configure parser settings and click 'Run analysis'.")
+    elif measurement_file is None:
         st.info("Upload measurements to run validation and parsing.")
     else:
-        measurements_df = _read_uploaded_table(measurement_file)
-        parse_mode = st.selectbox("Input mode", options=["timeseries", "endpoint"], key="analysis_mode")
-
         try:
-            if parse_mode == "timeseries":
-                parsed_wide = parse_timeseries_wide(measurements_df, plate_size=plate_size, time_col="time")
-            else:
-                parsed_wide = parse_endpoint(measurements_df, plate_size=plate_size, time_col="time")
-
-            tidy_df = wide_to_long(parsed_wide, plate_size=plate_size, time_col="time", value_name="value")
+            measurement_text = measurement_file.getvalue().decode("utf-8")
+            tidy_df = parse_plate_reader_wide(
+                measurement_text,
+                plate_size=plate_size,
+                time_col=time_column_name,
+                delimiter=delimiter_choice,
+                decimal=decimal_choice,
+            )
             st.success("Measurements validated and parsed to canonical tidy format.")
             st.dataframe(tidy_df.head(12), use_container_width=True)
         except Exception as exc:  # pragma: no cover - defensive streamlit display
@@ -509,9 +512,16 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
         if layout_df is not None:
             try:
-                validated_layout = load_layout(layout_df, plate_size=plate_size, well_col="well")
-                tidy_df = merge_measurements_with_layout(tidy_df, validated_layout, plate_size=plate_size)
+                well_column = "well" if "well" in layout_df.columns else "Well"
+                validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=well_column)
+                merged_df = merge_measurements_with_layout(
+                    tidy_df,
+                    validated_layout,
+                    plate_size=plate_size,
+                    layout_well_col=well_column,
+                )
                 st.success("Rosetta/layout validated and merged.")
+                st.dataframe(merged_df.head(12), use_container_width=True)
             except Exception as exc:  # pragma: no cover - defensive streamlit display
                 st.error(f"Failed to validate/merge Rosetta layout: {exc}")
 
@@ -523,7 +533,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
             qc = qc_summary(tidy_df)
             overall = qc["missing"]["overall"]
             st.dataframe(overall, use_container_width=True)
-            st.caption("Placeholder preview of `qc_summary` output.")
+            st.dataframe(qc["constant_wells"].head(12), use_container_width=True)
+            st.dataframe(qc["outlier_wells"].head(12), use_container_width=True)
+            st.dataframe(qc["edge_effects"], use_container_width=True)
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to compute QC summary: {exc}")
 
@@ -532,9 +544,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
         st.info("Feature extraction results will appear after successful parsing.")
     else:
         try:
-            features_df = extract_features(tidy_df)
+            feature_source = merged_df if merged_df is not None else tidy_df
+            features_df = extract_features(feature_source)
             st.dataframe(features_df.head(12), use_container_width=True)
-            st.caption("Placeholder preview of endpoint/AUC/max_slope outputs.")
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to extract features: {exc}")
 
@@ -550,6 +562,45 @@ def _render_analyze_data(st, plate_size: int) -> None:
         file_name="rosettier_tidy.csv",
         mime="text/csv",
     )
+    if merged_df is not None:
+        st.download_button(
+            label="Download merged data (CSV)",
+            data=merged_df.to_csv(index=False),
+            file_name="rosettier_merged.csv",
+            mime="text/csv",
+        )
+
+    if qc is not None:
+        st.download_button(
+            label="Download QC missing overall (CSV)",
+            data=qc["missing"]["overall"].to_csv(index=False),
+            file_name="rosettier_qc_missing_overall.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download QC missing per well (CSV)",
+            data=qc["missing"]["per_well"].to_csv(index=False),
+            file_name="rosettier_qc_missing_per_well.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download QC constant wells (CSV)",
+            data=qc["constant_wells"].to_csv(index=False),
+            file_name="rosettier_qc_constant_wells.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download QC outlier wells (CSV)",
+            data=qc["outlier_wells"].to_csv(index=False),
+            file_name="rosettier_qc_outlier_wells.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download QC edge effects (CSV)",
+            data=qc["edge_effects"].to_csv(index=False),
+            file_name="rosettier_qc_edge_effects.csv",
+            mime="text/csv",
+        )
 
     if features_df is not None:
         st.download_button(
