@@ -27,3 +27,7 @@ class DuplicatedTimepointError(RosettierError):
 
 class PlateSizeMismatchError(RosettierError):
     """Raised when wells do not match the expected plate size or between datasets."""
+
+class SchemaValidationError(RosettierError):
+    """Raised when a dataframe does not satisfy Rosettier canonical schema requirements."""
+
