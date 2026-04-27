@@ -157,107 +157,229 @@ def _selected_wells_from_event(event: dict | None, rosetta_df: pd.DataFrame) -> 
 
 def _init_rosetta_state(st, plate_size: int) -> None:
     """Initialize stable session state for Create Rosetta mode."""
-    if "rosetta_variables" not in st.session_state:
-        st.session_state["rosetta_variables"] = []
+    _init_rosetta_editor_state(st, state_prefix="rosetta", plate_size=plate_size)
 
-    if "rosetta_plate_size" not in st.session_state:
-        st.session_state["rosetta_plate_size"] = plate_size
 
-    reset_required = "rosetta_df" not in st.session_state or st.session_state["rosetta_plate_size"] != plate_size
+def _init_rosetta_editor_state(st, state_prefix: str, plate_size: int) -> None:
+    """Initialize stable editor state for any Rosetta editor instance."""
+    variables_key = f"{state_prefix}_variables"
+    plate_size_key = f"{state_prefix}_plate_size"
+    df_key = f"{state_prefix}_df"
+    selected_wells_key = f"{state_prefix}_selected_wells"
+
+    if variables_key not in st.session_state:
+        st.session_state[variables_key] = []
+
+    if plate_size_key not in st.session_state:
+        st.session_state[plate_size_key] = plate_size
+
+    reset_required = df_key not in st.session_state or st.session_state[plate_size_key] != plate_size
 
     if reset_required:
         spec = PlateSpec.from_size(plate_size)
         rosetta_df = _build_rosetta_table(spec)
-        rosetta_df = _ensure_variable_columns(rosetta_df, st.session_state["rosetta_variables"])
-        st.session_state["rosetta_df"] = rosetta_df
-        st.session_state["rosetta_selected_wells"] = []
-        st.session_state["rosetta_plate_size"] = plate_size
+        rosetta_df = _ensure_variable_columns(rosetta_df, st.session_state[variables_key])
+        st.session_state[df_key] = rosetta_df
+        st.session_state[selected_wells_key] = []
+        st.session_state[plate_size_key] = plate_size
 
 
-def _render_create_rosetta(st, plate_size: int) -> None:
-    """Mode: create and export Rosetta metadata."""
-    st.header("Create Rosetta")
-    _init_rosetta_state(st, plate_size)
+def _map_96_well_to_384_well(well: str, row_offset: int, col_offset: int) -> tuple[str, str, int]:
+    """Map one 96-well coordinate onto a 384-well coordinate via legacy offsets."""
+    row_label = str(well[0])
+    col_label = int(well[1:])
+    row_index = ord(row_label) - ord("A")
+    mapped_row = chr(ord("A") + (2 * row_index) + row_offset)
+    mapped_column = (2 * col_label) - 1 + col_offset
+    mapped_well = f"{mapped_row}{mapped_column:02d}"
+    return mapped_well, mapped_row, mapped_column
 
-    rosetta_df = st.session_state["rosetta_df"]
-    variables = st.session_state["rosetta_variables"]
-    selected_wells = st.session_state.get("rosetta_selected_wells", [])
+
+def _combine_four_96_rosettas(rosetta_tables: list[pd.DataFrame]) -> pd.DataFrame:
+    """Combine four 96-well Rosettas into one 384-well Rosetta via legacy mapping."""
+    if len(rosetta_tables) != 4:
+        raise ValueError("Exactly four 96-well Rosetta tables are required.")
+
+    combined_rows: list[dict[str, object]] = []
+    offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
+
+    for idx, rosetta_df in enumerate(rosetta_tables):
+        validate_complete_well_set(rosetta_df["well"].tolist(), plate_size=96)
+        row_offset, col_offset = offsets[idx]
+        metadata_columns = [c for c in rosetta_df.columns if c not in {"well", "row", "column"}]
+        for record in rosetta_df.to_dict(orient="records"):
+            mapped_well, mapped_row, mapped_col = _map_96_well_to_384_well(
+                str(record["well"]), row_offset=row_offset, col_offset=col_offset
+            )
+            combined_record: dict[str, object] = {"well": mapped_well, "row": mapped_row, "column": mapped_col}
+            for metadata_column in metadata_columns:
+                combined_record[metadata_column] = record.get(metadata_column)
+            combined_rows.append(combined_record)
+
+    combined_df = pd.DataFrame(combined_rows)
+    combined_df = _ensure_variable_columns(combined_df, [c for c in combined_df.columns if c not in {"well", "row", "column"}])
+    combined_df = combined_df.sort_values(by=["row", "column"], kind="stable").reset_index(drop=True)
+    validate_complete_well_set(combined_df["well"].tolist(), plate_size=384)
+    return combined_df[_ordered_rosetta_columns(combined_df)]
+
+
+def _render_rosetta_editor(st, plate_size: int, state_prefix: str, widget_prefix: str, show_table: bool = True) -> pd.DataFrame:
+    """Render a reusable Rosetta editor and return its current table."""
+    _init_rosetta_editor_state(st, state_prefix=state_prefix, plate_size=plate_size)
+
+    df_key = f"{state_prefix}_df"
+    variables_key = f"{state_prefix}_variables"
+    selected_key = f"{state_prefix}_selected_wells"
+
+    rosetta_df = st.session_state[df_key]
+    variables = st.session_state[variables_key]
+    selected_wells = st.session_state.get(selected_key, [])
     spec = PlateSpec.from_size(plate_size)
 
-    st.subheader("Rosetta editor")
-
-    # A. Visualization variable
     viz_options = ["None", *variables]
-    selected_viz_label = st.selectbox("A. Select visualization variable", options=viz_options, index=0)
+    selected_viz_label = st.selectbox(
+        "A. Select visualization variable",
+        options=viz_options,
+        index=0,
+        key=f"{widget_prefix}_viz",
+    )
     selected_viz = None if selected_viz_label == "None" else selected_viz_label
 
-    # B. Interactive plate
     fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=selected_viz)
-    event = st.plotly_chart(fig, use_container_width=True, key="rosetta_plate", on_select="rerun")
+    event = st.plotly_chart(fig, use_container_width=True, key=f"{widget_prefix}_plate", on_select="rerun")
     just_selected = _selected_wells_from_event(event, rosetta_df)
     if just_selected:
-        st.session_state["rosetta_selected_wells"] = sorted(set(just_selected))
-        selected_wells = st.session_state["rosetta_selected_wells"]
+        st.session_state[selected_key] = sorted(set(just_selected))
+        selected_wells = st.session_state[selected_key]
 
     st.caption(f"Selected wells ({len(selected_wells)}): {', '.join(selected_wells[:12])}{' ...' if len(selected_wells) > 12 else ''}")
-    if st.button("Clear selected wells"):
-        st.session_state["rosetta_selected_wells"] = []
+    if st.button("Clear selected wells", key=f"{widget_prefix}_clear"):
+        st.session_state[selected_key] = []
         st.rerun()
 
-    # C. Add variable
-    new_var = st.text_input("C. Add variable", placeholder="e.g. strain")
-    if st.button("Add variable") and new_var.strip():
+    new_var = st.text_input("C. Add variable", placeholder="e.g. strain", key=f"{widget_prefix}_new_var")
+    if st.button("Add variable", key=f"{widget_prefix}_add_var") and new_var.strip():
         candidate = new_var.strip()
         if candidate not in variables:
-            st.session_state["rosetta_variables"] = [*variables, candidate]
-            st.session_state["rosetta_df"] = _ensure_variable_columns(rosetta_df, st.session_state["rosetta_variables"])
+            st.session_state[variables_key] = [*variables, candidate]
+            st.session_state[df_key] = _ensure_variable_columns(rosetta_df, st.session_state[variables_key])
             st.success(f"Added variable: {candidate}")
             st.rerun()
         else:
             st.info(f"Variable already exists: {candidate}")
 
-    # D. Assign values
-    if not st.session_state["rosetta_variables"]:
+    if not st.session_state[variables_key]:
         st.info("D. Assign value to selected wells: add at least one variable first.")
     else:
         assign_variable = st.selectbox(
             "D. Variable to assign",
-            options=st.session_state["rosetta_variables"],
-            key="assign_variable",
+            options=st.session_state[variables_key],
+            key=f"{widget_prefix}_assign_variable",
         )
-        assign_value = st.text_input("D. Value", key="assign_value", placeholder="e.g. WT")
-        if st.button("Assign value to selected wells"):
-            st.session_state["rosetta_df"] = _assign_value_to_wells(
-                st.session_state["rosetta_df"],
-                st.session_state.get("rosetta_selected_wells", []),
+        assign_value = st.text_input("D. Value", key=f"{widget_prefix}_assign_value", placeholder="e.g. WT")
+        if st.button("Assign value to selected wells", key=f"{widget_prefix}_assign"):
+            st.session_state[df_key] = _assign_value_to_wells(
+                st.session_state[df_key],
+                st.session_state.get(selected_key, []),
                 assign_variable,
                 assign_value,
             )
-            st.success(f"Assigned value to {len(st.session_state.get('rosetta_selected_wells', []))} selected wells.")
+            st.success(f"Assigned value to {len(st.session_state.get(selected_key, []))} selected wells.")
             st.rerun()
 
-    st.subheader("Current Rosetta table")
-    table_to_show = st.session_state["rosetta_df"][_ordered_rosetta_columns(st.session_state["rosetta_df"])]
-    st.dataframe(table_to_show, use_container_width=True, height=320)
+    table_to_show = st.session_state[df_key][_ordered_rosetta_columns(st.session_state[df_key])]
+    if show_table:
+        st.subheader("Current Rosetta table")
+        st.dataframe(table_to_show, use_container_width=True, height=320)
+    return table_to_show
 
-    st.subheader("Validate Rosetta")
+
+def _render_create_rosetta(st, plate_size: int) -> None:
+    """Mode: create and export Rosetta metadata."""
+    st.header("Create Rosetta")
+    creation_mode = st.radio(
+        "Creation mode",
+        options=["Direct plate creation", "Combine four 96-well Rosettas into 384"],
+        key="create_mode",
+    )
+
+    if creation_mode == "Direct plate creation":
+        st.subheader("Rosetta editor")
+        table_to_show = _render_rosetta_editor(st, plate_size=plate_size, state_prefix="rosetta", widget_prefix="direct")
+        st.session_state["rosetta_df"] = table_to_show
+
+        st.subheader("Validate Rosetta")
+        try:
+            validate_complete_well_set(table_to_show["well"].tolist(), plate_size=plate_size)
+            st.success("Rosetta validation passed: well set matches selected plate size.")
+        except Exception as exc:  # pragma: no cover - defensive streamlit display
+            st.error(f"Rosetta validation failed: {exc}")
+
+        st.subheader("Export Rosetta")
+        st.download_button(
+            label="Download Rosetta (CSV)",
+            data=table_to_show.to_csv(index=False),
+            file_name=f"rosetta_layout_{plate_size}.csv",
+            mime="text/csv",
+        )
+        st.download_button(
+            label="Download Rosetta (TSV)",
+            data=table_to_show.to_csv(index=False, sep="\t"),
+            file_name=f"rosetta_layout_{plate_size}.tsv",
+            mime="text/tab-separated-values",
+        )
+        return
+
+    st.caption("Legacy-compatible mapping: Plate1→(0,0), Plate2→(0,1), Plate3→(1,0), Plate4→(1,1).")
+    tab_labels = ["Plate 1 (96)", "Plate 2 (96)", "Plate 3 (96)", "Plate 4 (96)"]
+    tabs = st.tabs(tab_labels)
+    for idx, tab in enumerate(tabs, start=1):
+        with tab:
+            st.subheader(f"Rosetta editor for Plate {idx}")
+            _render_rosetta_editor(
+                st,
+                plate_size=96,
+                state_prefix=f"combine_plate_{idx}",
+                widget_prefix=f"combine_plate_{idx}",
+            )
+
+    if st.button("Combine into 384 Rosetta", key="combine_rosettas_384"):
+        try:
+            combined_df = _combine_four_96_rosettas(
+                [st.session_state[f"combine_plate_{idx}_df"] for idx in range(1, 5)]
+            )
+            st.session_state["combined_384_df"] = combined_df
+            st.session_state["rosetta_df"] = combined_df
+            st.success("Combined 384 Rosetta created successfully.")
+        except Exception as exc:  # pragma: no cover - defensive streamlit display
+            st.error(f"Failed to combine 96-well Rosettas: {exc}")
+
+    if "combined_384_df" not in st.session_state:
+        st.info("Create/edit all four 96-well Rosettas, then click 'Combine into 384 Rosetta'.")
+        return
+
+    combined_df = st.session_state["combined_384_df"][_ordered_rosetta_columns(st.session_state["combined_384_df"])]
+    st.subheader("Combined 384 Rosetta preview")
+    st.dataframe(combined_df, use_container_width=True, height=360)
+
+    st.subheader("Validate combined 384 Rosetta")
     try:
-        validate_complete_well_set(table_to_show["well"].tolist(), plate_size=plate_size)
-        st.success("Rosetta validation passed: well set matches selected plate size.")
+        validate_complete_well_set(combined_df["well"].tolist(), plate_size=384)
+        st.success("Combined Rosetta validation passed: complete 384 well set.")
     except Exception as exc:  # pragma: no cover - defensive streamlit display
-        st.error(f"Rosetta validation failed: {exc}")
+        st.error(f"Combined Rosetta validation failed: {exc}")
 
-    st.subheader("Export Rosetta")
+    st.subheader("Export combined 384 Rosetta")
     st.download_button(
-        label="Download Rosetta (CSV)",
-        data=table_to_show.to_csv(index=False),
-        file_name=f"rosetta_layout_{plate_size}.csv",
+        label="Download combined 384 Rosetta (CSV)",
+        data=combined_df.to_csv(index=False),
+        file_name="rosetta_layout_384_combined.csv",
         mime="text/csv",
     )
     st.download_button(
-        label="Download Rosetta (TSV)",
-        data=table_to_show.to_csv(index=False, sep="\t"),
-        file_name=f"rosetta_layout_{plate_size}.tsv",
+        label="Download combined 384 Rosetta (TSV)",
+        data=combined_df.to_csv(index=False, sep="\t"),
+        file_name="rosetta_layout_384_combined.tsv",
         mime="text/tab-separated-values",
     )
 
