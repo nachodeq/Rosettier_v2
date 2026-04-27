@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
+
+from .schema import enrich_well_coordinates, normalize_measurement_column, require_columns
 
 _SUPPORTED_EXTENSIONS = {
     ".csv": "csv",
     ".tsv": "tsv",
     ".parquet": "parquet",
 }
-
-
-def _require_columns(df: pd.DataFrame, required: Iterable[str]) -> None:
-    missing = [col for col in required if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
 
 
 def validate_export_path(path: str | Path) -> str:
@@ -55,9 +50,14 @@ def prepare_plate_matrix(
     aggregation: str | None = None,
 ) -> pd.DataFrame:
     """Build a plate-shaped matrix from tidy well-level data."""
-    _require_columns(df, ["well", "row", "column", value_column])
+    if value_column == "value":
+        normalized = normalize_measurement_column(df)
+        require_columns(normalized, ["well", "value"])
+        table = enrich_well_coordinates(normalized)[["well", "row", "column", "value"]].copy()
+    else:
+        require_columns(df, ["well", "row", "column", value_column])
+        table = df[["well", "row", "column", value_column]].copy()
 
-    table = df[["well", "row", "column", value_column]].copy()
     duplicate_wells = table.duplicated(subset=["well"], keep=False)
 
     if duplicate_wells.any() and aggregation is None:
@@ -81,7 +81,7 @@ def summarize_by_group(
     aggregations: tuple[str, ...] = ("mean", "median", "std", "count"),
 ) -> pd.DataFrame:
     """Compute descriptive grouped summaries only (no tests/inference)."""
-    _require_columns(df, [*group_columns, value_column])
+    require_columns(df, [*group_columns, value_column])
 
     summary = (
         df.groupby(group_columns, dropna=False)[value_column]

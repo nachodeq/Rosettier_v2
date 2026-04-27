@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 import inspect
 
+from rosettier.exceptions import SchemaValidationError
 from rosettier.features import (
     extract_auc,
     extract_endpoint,
@@ -69,7 +70,7 @@ def test_extract_features_ignores_non_constant_metadata_within_well():
 def test_duplicate_timepoints_within_well_raise_value_error():
     df = pd.concat([_tidy_df(), _tidy_df().iloc[[0]]], ignore_index=True)
     for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_time_to_threshold, extract_features):
-        with pytest.raises(ValueError, match="Duplicate timepoints"):
+        with pytest.raises(SchemaValidationError, match="Duplicate timepoints"):
             if fn is extract_time_to_threshold:
                 fn(df, threshold=0.5)
             else:
@@ -77,9 +78,9 @@ def test_duplicate_timepoints_within_well_raise_value_error():
 
 
 def test_missing_required_columns_raise_value_error():
-    df = _tidy_df().drop(columns=["row"])
+    df = _tidy_df().drop(columns=["well"])
     for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_time_to_threshold, extract_features):
-        with pytest.raises(ValueError, match="Missing required columns"):
+        with pytest.raises(SchemaValidationError, match="Missing required columns"):
             if fn is extract_time_to_threshold:
                 fn(df, threshold=0.5)
             else:
@@ -87,10 +88,10 @@ def test_missing_required_columns_raise_value_error():
 
 
 def test_extract_auc_validates_before_numpy_fallback_resolution(monkeypatch):
-    df = _tidy_df().drop(columns=["row"])
+    df = _tidy_df().drop(columns=["well"])
     monkeypatch.delattr("rosettier.features.np.trapezoid", raising=False)
     monkeypatch.delattr("rosettier.features.np.trapz", raising=False)
-    with pytest.raises(ValueError, match="Missing required columns"):
+    with pytest.raises(SchemaValidationError, match="Missing required columns"):
         extract_auc(df)
 
 
