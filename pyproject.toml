@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rosettier"
+version = "0.2.0"
+description = "Core plate processing utilities for Rosettier"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+app = [
+  "streamlit",
+  "plotly",
+]
+
+[project.scripts]
+rosettier-app = "rosettier_app.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
