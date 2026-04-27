@@ -8,6 +8,7 @@ from .exceptions import (
     NonNumericMeasurementError,
     PlateSizeMismatchError,
     RosettierError,
+    SchemaValidationError,
 )
 from .export import export_table, prepare_plate_matrix, summarize_by_group, validate_export_path
 from .features import (
@@ -27,9 +28,17 @@ from .qc import (
     qc_summary,
     summarize_missing_values,
 )
+from .schema import (
+    CANONICAL_TIDY_COLUMNS,
+    enrich_well_coordinates,
+    ensure_canonical_tidy,
+    normalize_measurement_column,
+    require_columns,
+)
 
 __all__ = [
     "RosettierError",
+    "SchemaValidationError",
     "InvalidWellError",
     "MissingWellError",
     "DuplicatedWellError",
@@ -61,4 +70,9 @@ __all__ = [
     "detect_outlier_wells",
     "detect_edge_effects",
     "qc_summary",
+    "CANONICAL_TIDY_COLUMNS",
+    "require_columns",
+    "normalize_measurement_column",
+    "enrich_well_coordinates",
+    "ensure_canonical_tidy",
 ]

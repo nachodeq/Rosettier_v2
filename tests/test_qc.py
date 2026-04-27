@@ -1,6 +1,9 @@
 import pandas as pd
 import pytest
 
+from rosettier.exceptions import SchemaValidationError
+
+
 from rosettier.qc import (
     detect_constant_wells,
     detect_edge_effects,
@@ -71,9 +74,9 @@ def test_detect_edge_effects_returns_expected_summary_fields():
 
 
 def test_qc_functions_raise_on_missing_required_columns():
-    df = _tidy_df().drop(columns=["row"])
+    df = _tidy_df().drop(columns=["well"])
     for fn in (summarize_missing_values, detect_constant_wells, detect_outlier_wells, detect_edge_effects, qc_summary):
-        with pytest.raises(ValueError, match="Missing required columns"):
+        with pytest.raises(SchemaValidationError, match="Missing required columns"):
             fn(df)
 
 
