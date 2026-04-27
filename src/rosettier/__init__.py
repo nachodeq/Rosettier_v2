@@ -9,6 +9,7 @@ from .exceptions import (
     PlateSizeMismatchError,
     RosettierError,
 )
+from .export import export_table, prepare_plate_matrix, summarize_by_group, validate_export_path
 from .features import (
     extract_auc,
     extract_endpoint,
@@ -36,6 +37,10 @@ __all__ = [
     "DuplicatedTimepointError",
     "PlateSizeMismatchError",
     "PlateSpec",
+    "validate_export_path",
+    "export_table",
+    "prepare_plate_matrix",
+    "summarize_by_group",
     "extract_endpoint",
     "extract_auc",
     "extract_max_slope",
