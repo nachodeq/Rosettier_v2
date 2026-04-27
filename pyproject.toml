@@ -15,6 +15,13 @@ dependencies = [
 dev = [
   "pytest",
 ]
+app = [
+  "streamlit",
+  "plotly",
+]
+
+[project.scripts]
+rosettier-app = "rosettier_app.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
