@@ -12,8 +12,6 @@ from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec, validate_complete_well_set
 from rosettier.qc import qc_summary
 
-_DEFAULT_VARIABLES = ["strain", "drug", "concentration", "replicate", "control_type", "group"]
-
 
 def _read_uploaded_table(uploaded_file) -> pd.DataFrame:
     """Read CSV/TSV uploads without mutating app state."""
@@ -34,13 +32,20 @@ def _build_rosetta_table(spec: PlateSpec) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _ordered_rosetta_columns(df: pd.DataFrame) -> list[str]:
+    """Return Rosetta columns in canonical order plus user-defined columns."""
+    base = ["well", "row", "column"]
+    dynamic = [c for c in df.columns if c not in base]
+    return [*base, *dynamic]
+
+
 def _ensure_variable_columns(df: pd.DataFrame, variables: list[str]) -> pd.DataFrame:
     """Return dataframe with all requested variable columns present."""
     out = df.copy()
     for var in variables:
         if var not in out.columns:
             out[var] = ""
-    return out
+    return out[_ordered_rosetta_columns(out)]
 
 
 def _assign_value_to_wells(
@@ -54,12 +59,12 @@ def _assign_value_to_wells(
     if variable not in out.columns:
         out[variable] = ""
     if not wells:
-        return out
+        return out[_ordered_rosetta_columns(out)]
     out.loc[out["well"].isin(wells), variable] = value
-    return out
+    return out[_ordered_rosetta_columns(out)]
 
 
-def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells: list[str], color_variable: str):
+def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells: list[str], color_variable: str | None):
     """Create a Plotly plate figure for interactive well selection."""
     import plotly.graph_objects as go
 
@@ -70,7 +75,7 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
 
     is_selected = plot_df["well"].isin(selected_wells)
 
-    if color_variable in rosetta_df.columns:
+    if color_variable is not None and color_variable in rosetta_df.columns:
         color_series = rosetta_df[color_variable].fillna("").astype(str)
         has_value = color_series.str.len() > 0
         colors = ["#4c78a8" if hv else "#d9d9d9" for hv in has_value]
@@ -78,8 +83,8 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         colors = ["#d9d9d9"] * len(plot_df)
 
     marker_sizes = [16 if spec.size == 384 else 28] * len(plot_df)
-    line_colors = ["#ff7f0e" if sel else "#333333" for sel in is_selected]
-    line_widths = [2.5 if sel else 0.8 for sel in is_selected]
+    line_colors = ["#ff7f0e" if sel else "#b3b3b3" for sel in is_selected]
+    line_widths = [2.3 if sel else 0.8 for sel in is_selected]
 
     fig = go.Figure(
         data=[
@@ -89,6 +94,7 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
                 mode="markers+text" if spec.size == 96 else "markers",
                 text=plot_df["well"] if spec.size == 96 else None,
                 textposition="middle center",
+                textfont={"size": 9, "color": "#222222"},
                 customdata=plot_df[["well"]],
                 marker={
                     "size": marker_sizes,
@@ -100,7 +106,13 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         ]
     )
 
-    fig.update_xaxes(range=[0.5, len(spec.columns) + 0.5], dtick=1, title="column")
+    fig.update_xaxes(
+        range=[0.5, len(spec.columns) + 0.5],
+        dtick=1,
+        title="column",
+        showgrid=False,
+        zeroline=False,
+    )
     fig.update_yaxes(
         range=[0.5, len(spec.rows) + 0.5],
         dtick=1,
@@ -108,8 +120,17 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         tickvals=list(range(len(spec.rows), 0, -1)),
         ticktext=list(spec.rows),
         title="row",
+        showgrid=False,
+        zeroline=False,
     )
-    fig.update_layout(height=650 if spec.size == 96 else 820, clickmode="event+select", dragmode="select")
+    fig.update_layout(
+        height=650 if spec.size == 96 else 820,
+        clickmode="event+select",
+        dragmode="select",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin={"l": 24, "r": 24, "t": 24, "b": 24},
+    )
     return fig
 
 
@@ -137,7 +158,7 @@ def _selected_wells_from_event(event: dict | None, rosetta_df: pd.DataFrame) -> 
 def _init_rosetta_state(st, plate_size: int) -> None:
     """Initialize stable session state for Create Rosetta mode."""
     if "rosetta_variables" not in st.session_state:
-        st.session_state["rosetta_variables"] = list(_DEFAULT_VARIABLES)
+        st.session_state["rosetta_variables"] = []
 
     if "rosetta_plate_size" not in st.session_state:
         st.session_state["rosetta_plate_size"] = plate_size
@@ -163,65 +184,79 @@ def _render_create_rosetta(st, plate_size: int) -> None:
     selected_wells = st.session_state.get("rosetta_selected_wells", [])
     spec = PlateSpec.from_size(plate_size)
 
-    st.subheader("1. Interactive plate view")
-    color_variable = st.selectbox("Color wells by variable", options=variables, index=0 if variables else None)
+    st.subheader("Rosetta editor")
 
-    fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=color_variable)
+    # A. Visualization variable
+    viz_options = ["None", *variables]
+    selected_viz_label = st.selectbox("A. Select visualization variable", options=viz_options, index=0)
+    selected_viz = None if selected_viz_label == "None" else selected_viz_label
+
+    # B. Interactive plate
+    fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=selected_viz)
     event = st.plotly_chart(fig, use_container_width=True, key="rosetta_plate", on_select="rerun")
     just_selected = _selected_wells_from_event(event, rosetta_df)
     if just_selected:
         st.session_state["rosetta_selected_wells"] = sorted(set(just_selected))
         selected_wells = st.session_state["rosetta_selected_wells"]
 
-    st.caption(f"Selected wells: {len(selected_wells)}")
+    st.caption(f"Selected wells ({len(selected_wells)}): {', '.join(selected_wells[:12])}{' ...' if len(selected_wells) > 12 else ''}")
     if st.button("Clear selected wells"):
         st.session_state["rosetta_selected_wells"] = []
-        selected_wells = []
+        st.rerun()
 
-    st.subheader("2. Variable management")
-    new_var = st.text_input("Add metadata variable", placeholder="e.g. strain")
+    # C. Add variable
+    new_var = st.text_input("C. Add variable", placeholder="e.g. strain")
     if st.button("Add variable") and new_var.strip():
         candidate = new_var.strip()
         if candidate not in variables:
             st.session_state["rosetta_variables"] = [*variables, candidate]
             st.session_state["rosetta_df"] = _ensure_variable_columns(rosetta_df, st.session_state["rosetta_variables"])
             st.success(f"Added variable: {candidate}")
+            st.rerun()
         else:
             st.info(f"Variable already exists: {candidate}")
 
-    st.subheader("3. Assign values to selected wells")
-    assign_variable = st.selectbox("Variable", options=st.session_state["rosetta_variables"], key="assign_variable")
-    assign_value = st.text_input("Value", key="assign_value", placeholder="e.g. WT")
-    if st.button("Assign value to selected wells"):
-        st.session_state["rosetta_df"] = _assign_value_to_wells(
-            st.session_state["rosetta_df"],
-            st.session_state.get("rosetta_selected_wells", []),
-            assign_variable,
-            assign_value,
+    # D. Assign values
+    if not st.session_state["rosetta_variables"]:
+        st.info("D. Assign value to selected wells: add at least one variable first.")
+    else:
+        assign_variable = st.selectbox(
+            "D. Variable to assign",
+            options=st.session_state["rosetta_variables"],
+            key="assign_variable",
         )
-        st.success("Value assignment complete.")
+        assign_value = st.text_input("D. Value", key="assign_value", placeholder="e.g. WT")
+        if st.button("Assign value to selected wells"):
+            st.session_state["rosetta_df"] = _assign_value_to_wells(
+                st.session_state["rosetta_df"],
+                st.session_state.get("rosetta_selected_wells", []),
+                assign_variable,
+                assign_value,
+            )
+            st.success(f"Assigned value to {len(st.session_state.get('rosetta_selected_wells', []))} selected wells.")
+            st.rerun()
 
-    st.subheader("4. Current Rosetta table")
-    st.dataframe(st.session_state["rosetta_df"], use_container_width=True, height=280)
+    st.subheader("Current Rosetta table")
+    table_to_show = st.session_state["rosetta_df"][_ordered_rosetta_columns(st.session_state["rosetta_df"])]
+    st.dataframe(table_to_show, use_container_width=True, height=320)
 
-    st.subheader("5. Validate Rosetta")
+    st.subheader("Validate Rosetta")
     try:
-        validate_complete_well_set(st.session_state["rosetta_df"]["well"].tolist(), plate_size=plate_size)
+        validate_complete_well_set(table_to_show["well"].tolist(), plate_size=plate_size)
         st.success("Rosetta validation passed: well set matches selected plate size.")
     except Exception as exc:  # pragma: no cover - defensive streamlit display
         st.error(f"Rosetta validation failed: {exc}")
 
-    st.subheader("6. Export Rosetta")
-    export_df = st.session_state["rosetta_df"]
+    st.subheader("Export Rosetta")
     st.download_button(
         label="Download Rosetta (CSV)",
-        data=export_df.to_csv(index=False),
+        data=table_to_show.to_csv(index=False),
         file_name=f"rosetta_layout_{plate_size}.csv",
         mime="text/csv",
     )
     st.download_button(
         label="Download Rosetta (TSV)",
-        data=export_df.to_csv(index=False, sep="\t"),
+        data=table_to_show.to_csv(index=False, sep="\t"),
         file_name=f"rosetta_layout_{plate_size}.tsv",
         mime="text/tab-separated-values",
     )
