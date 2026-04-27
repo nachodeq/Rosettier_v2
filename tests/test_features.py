@@ -93,6 +93,14 @@ def test_extract_auc_validates_before_numpy_fallback_resolution(monkeypatch):
         extract_auc(df)
 
 
+def test_extract_auc_uses_internal_fallback_when_numpy_integrators_missing(monkeypatch):
+    df = _tidy_df()
+    monkeypatch.delattr("rosettier.features.np.trapezoid", raising=False)
+    monkeypatch.delattr("rosettier.features.np.trapz", raising=False)
+    out = extract_auc(df).set_index("well")
+    assert out.loc["A01", "auc"] == 2.0
+
+
 def test_no_mutation():
     df = _tidy_df()
     before = df.copy(deep=True)

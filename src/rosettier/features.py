@@ -28,6 +28,14 @@ def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values(["well", "time"]).copy()
 
 
+def _fallback_trapezoid(y: np.ndarray, x: np.ndarray) -> float:
+    """Compute trapezoidal integral without relying on deprecated/removed NumPy APIs."""
+    if y.size < 2:
+        return float("nan")
+    dx = np.diff(x)
+    return float(np.sum((y[:-1] + y[1:]) * 0.5 * dx))
+
+
 def _well_identity(df: pd.DataFrame) -> pd.DataFrame:
     return (
         df.sort_values(["well", "time"])
@@ -68,6 +76,9 @@ def extract_auc(df: pd.DataFrame) -> pd.DataFrame:
     base = _prepare(df)
     trap = getattr(np, "trapezoid", None)
     if trap is None:
+        trap = getattr(np, "trapz", None)
+    if trap is None:
+        trap = _fallback_trapezoid
         trap = getattr(np, "trapz")
     trap = getattr(np, "trapezoid", np.trapz)
 
