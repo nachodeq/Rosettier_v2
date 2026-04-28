@@ -486,6 +486,38 @@ def _filter_tidy_by_time_window(
     return out.reset_index(drop=True)
 
 
+def _metadata_columns_for_raw_curves(merged_df: pd.DataFrame | None) -> list[str]:
+    """Return metadata columns that can annotate raw curve traces."""
+    if merged_df is None:
+        return []
+    reserved = {"well", "row", "column", "time", "value"}
+    return [column for column in merged_df.columns if column not in reserved]
+
+
+def _prepare_raw_curve_plot_df(
+    tidy_df: pd.DataFrame,
+    wells_to_plot: list[str],
+    merged_df: pd.DataFrame | None = None,
+    group_column: str | None = None,
+) -> pd.DataFrame:
+    """Build plot-ready dataframe for raw per-well time-series curves."""
+    plot_df = tidy_df.loc[tidy_df["well"].isin(wells_to_plot), ["well", "time", "value"]].copy()
+
+    if merged_df is not None and group_column and group_column in merged_df.columns:
+        group_lookup = (
+            merged_df[["well", group_column]]
+            .dropna(subset=["well"])
+            .drop_duplicates(subset=["well"], keep="first")
+            .rename(columns={group_column: "metadata_group"})
+        )
+        plot_df = plot_df.merge(group_lookup, on="well", how="left")
+        plot_df["metadata_group"] = plot_df["metadata_group"].fillna("—").astype(str)
+    else:
+        plot_df["metadata_group"] = ""
+
+    return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
+
+
 def _compute_selected_features(
     feature_source: pd.DataFrame,
     *,
@@ -711,7 +743,68 @@ def _render_analyze_data(st, plate_size: int) -> None:
         except Exception as exc:  # pragma: no cover - defensive streamlit display
             st.error(f"Failed to extract features: {exc}")
 
-    st.subheader("7. Results / Export")
+    st.subheader("7. Raw curves")
+    if filtered_tidy_df is None:
+        st.info("Raw curves will appear after successful parsing.")
+    else:
+        import plotly.express as px
+
+        available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
+        selected_wells = st.multiselect(
+            "Wells to plot",
+            options=available_wells,
+            default=[],
+            key="analyze_raw_curve_wells",
+            help="Leave empty to plot all wells.",
+        )
+        wells_to_plot = selected_wells if selected_wells else available_wells
+
+        metadata_columns = _metadata_columns_for_raw_curves(merged_df)
+        selected_group_column = None
+        if metadata_columns:
+            selected_group_column = st.selectbox(
+                "Metadata column for hover labels (optional)",
+                options=["None", *metadata_columns],
+                index=0,
+                key="analyze_raw_curve_group_column",
+            )
+            if selected_group_column == "None":
+                selected_group_column = None
+
+        raw_plot_df = _prepare_raw_curve_plot_df(
+            filtered_tidy_df,
+            wells_to_plot=wells_to_plot,
+            merged_df=merged_df,
+            group_column=selected_group_column,
+        )
+
+        fig = px.line(
+            raw_plot_df,
+            x="time",
+            y="value",
+            color="well",
+            line_group="well",
+            labels={"time": "Elapsed time (minutes)", "value": "Raw value", "well": "Well"},
+            title=f"Raw {config.get('signal_name', 'OD') if config else 'OD'} curves",
+            custom_data=["metadata_group"],
+        )
+        fig.update_traces(mode="lines", opacity=0.55, line={"width": 1.3})
+        if selected_group_column is not None:
+            fig.update_traces(
+                hovertemplate=(
+                    "Well: %{fullData.name}<br>"
+                    "Time (min): %{x:.3f}<br>"
+                    "Value: %{y:.5g}<br>"
+                    f"{selected_group_column}: %{{customdata[0]}}<extra></extra>"
+                )
+            )
+        else:
+            fig.update_traces(
+                hovertemplate="Well: %{fullData.name}<br>Time (min): %{x:.3f}<br>Value: %{y:.5g}<extra></extra>"
+            )
+        st.plotly_chart(fig, use_container_width=True, key="analyze_raw_curves_plot")
+
+    st.subheader("8. Results / Export")
     if filtered_tidy_df is None:
         st.info("Results/export placeholders will activate after parsing.")
         return
@@ -724,6 +817,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
         file_name=f"rosettier_tidy_{signal_slug}.csv",
         mime="text/csv",
         key="download_tidy_csv",
+        on_click="ignore",
     )
     if merged_df is not None:
         st.download_button(
@@ -732,6 +826,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_merged_{signal_slug}.csv",
             mime="text/csv",
             key="download_merged_csv",
+            on_click="ignore",
         )
 
     if qc is not None:
@@ -741,6 +836,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
             mime="text/csv",
             key="download_qc_missing_overall_csv",
+            on_click="ignore",
         )
         st.download_button(
             label="Download QC missing per well (CSV)",
@@ -748,6 +844,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_qc_missing_per_well_{signal_slug}.csv",
             mime="text/csv",
             key="download_qc_missing_per_well_csv",
+            on_click="ignore",
         )
         st.download_button(
             label="Download QC constant wells (CSV)",
@@ -755,6 +852,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
             mime="text/csv",
             key="download_qc_constant_wells_csv",
+            on_click="ignore",
         )
         st.download_button(
             label="Download QC outlier wells (CSV)",
@@ -762,6 +860,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
             mime="text/csv",
             key="download_qc_outlier_wells_csv",
+            on_click="ignore",
         )
         st.download_button(
             label="Download QC edge effects (CSV)",
@@ -769,6 +868,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_qc_edge_effects_{signal_slug}.csv",
             mime="text/csv",
             key="download_qc_edge_effects_csv",
+            on_click="ignore",
         )
 
     if features_df is not None and features_df.shape[1] > 3:
@@ -778,6 +878,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             file_name=f"rosettier_features_{signal_slug}.csv",
             mime="text/csv",
             key="download_features_csv",
+            on_click="ignore",
         )
 
 
