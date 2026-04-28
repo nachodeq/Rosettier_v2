@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from io import StringIO
+from datetime import datetime, timezone
+from io import BytesIO, StringIO
+import json
+import zipfile
 
 import pandas as pd
 
@@ -777,6 +780,67 @@ def _rename_value_column_for_signal(df: pd.DataFrame, signal_name: str) -> pd.Da
     return renamed.rename(columns={"value": label})
 
 
+def _build_analysis_bundle_zip(
+    *,
+    signal_results: list[dict[str, object]],
+    plate_size: int,
+    config: dict[str, object] | None,
+    comparison_df: pd.DataFrame | None,
+    comparison_name: str | None,
+    comparison_fig=None,
+) -> bytes:
+    """Build reproducibility ZIP bundle for Analyze Data mode."""
+    buffer = BytesIO()
+    manifest: dict[str, object] = {
+        "signal_names": [str(result.get("signal_name", "")) for result in signal_results],
+        "plate_size": int(plate_size),
+        "time_filtering": {
+            "enabled": bool(config.get("enable_time_filter")) if config else False,
+            "min_time": config.get("min_time") if config else None,
+            "max_time": config.get("max_time") if config else None,
+        },
+        "selected_features": list(config.get("selected_features", [])) if config else [],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for signal_result in signal_results:
+            signal_name = str(signal_result.get("signal_name", "")).strip() or "OD"
+            signal_slug = str(signal_result.get("signal_slug", signal_name)).strip() or signal_name
+            signal_dir = f"signals/{signal_slug}"
+
+            tidy_df = signal_result.get("tidy_df")
+            if isinstance(tidy_df, pd.DataFrame):
+                bundle.writestr(f"{signal_dir}/parsed_tidy.csv", tidy_df.to_csv(index=False))
+
+            merged_df = signal_result.get("merged_df")
+            if isinstance(merged_df, pd.DataFrame):
+                bundle.writestr(f"{signal_dir}/merged.csv", merged_df.to_csv(index=False))
+
+            features_df = signal_result.get("features_df")
+            if isinstance(features_df, pd.DataFrame) and not features_df.empty:
+                bundle.writestr(f"{signal_dir}/features.csv", features_df.to_csv(index=False))
+
+            qc_export_df = signal_result.get("qc_export_df")
+            if isinstance(qc_export_df, pd.DataFrame) and not qc_export_df.empty:
+                bundle.writestr(f"{signal_dir}/qc_summary.csv", qc_export_df.to_csv(index=False))
+
+            raw_curve_fig = signal_result.get("raw_curve_fig")
+            if raw_curve_fig is not None:
+                bundle.writestr(f"{signal_dir}/raw_curves_plot.html", raw_curve_fig.to_html(full_html=True, include_plotlyjs="cdn"))
+
+        if isinstance(comparison_df, pd.DataFrame) and not comparison_df.empty:
+            table_name = comparison_name or "comparison_table"
+            bundle.writestr(f"comparison/{table_name}.csv", comparison_df.to_csv(index=False))
+        if comparison_fig is not None:
+            bundle.writestr("comparison/comparison_plot.html", comparison_fig.to_html(full_html=True, include_plotlyjs="cdn"))
+
+        manifest_json = json.dumps(manifest, indent=2)
+        bundle.writestr("manifest.json", manifest_json)
+
+    return buffer.getvalue()
+
+
 def _metadata_color_value_map(plot_df: pd.DataFrame, metadata_column: str | None) -> dict[str, str]:
     """Return deterministic colors for metadata values used in raw curve grouping."""
     if not metadata_column or metadata_column not in plot_df.columns:
@@ -1250,11 +1314,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 {
                     "signal_name": signal_name,
                     "signal_slug": signal_slug,
+                    "tidy_df": tidy_export_df,
                     "features_df": features_df,
                     "merged_df": merged_df,
+                    "qc_export_df": _combine_qc_outputs_for_export(qc) if qc is not None else None,
+                    "raw_curve_fig": fig,
                 }
             )
 
+    comparison_export_df: pd.DataFrame | None = None
+    comparison_export_name: str | None = None
+    comparison_export_fig = None
     st.markdown("### Compare features")
     available_comparison = [
         signal_result
@@ -1265,148 +1335,169 @@ def _render_analyze_data(st, plate_size: int) -> None:
     ]
     if not available_comparison:
         st.info("No extracted feature tables are available yet for comparison plotting.")
-        return
-
-    comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
-    selected_signal_option = st.selectbox(
-        "Signal",
-        options=comparison_signal_options,
-        format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
-        index=0,
-        key="compare_features_signal",
-    )
-    selected_signal = comparison_signal_map[selected_signal_option]["signal"]
-    selected_signal_name = str(selected_signal["signal_name"])
-    selected_signal_slug = str(selected_signal["signal_slug"])
-    selected_features_df = selected_signal["features_df"]
-    selected_merged_df = selected_signal["merged_df"]
-
-    selectable_features: list[tuple[str, str]] = []
-    for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
-        feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
-        if feature_column is not None:
-            selectable_features.append((feature_name, feature_column))
-    if not selectable_features:
-        st.info("No selectable feature columns were found for this signal.")
-        return
-
-    feature_lookup = {feature_name: feature_column for feature_name, feature_column in selectable_features}
-    selected_feature_name = st.selectbox(
-        "Feature",
-        options=[feature_name for feature_name, _ in selectable_features],
-        format_func=lambda feature: _FEATURE_LABELS.get(feature, feature),
-        key="compare_features_feature_name",
-    )
-    selected_feature_column = feature_lookup[selected_feature_name]
-
-    metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
-    if not metadata_columns:
-        st.info("Comparison plotting requires merged Rosetta metadata columns.")
-        return
-
-    selected_group_columns = st.multiselect(
-        "Grouping columns",
-        options=metadata_columns,
-        default=[],
-        key="compare_features_group_columns",
-        help="Select one or more metadata columns to define groups.",
-    )
-    if not selected_group_columns:
-        st.info("Select at least one grouping column.")
-        return
-    selected_color_column = st.selectbox(
-        "Color column (optional)",
-        options=["None", *metadata_columns],
-        index=0,
-        key="compare_features_color_column",
-    )
-    if selected_color_column == "None":
-        selected_color_column = None
-    selected_facet_column = st.selectbox(
-        "Facet column (optional)",
-        options=["None", *metadata_columns],
-        index=0,
-        key="compare_features_facet_column",
-    )
-    if selected_facet_column == "None":
-        selected_facet_column = None
-    selected_filter_column = st.selectbox(
-        'Filter (exact match, e.g. date == "2026-04-28")',
-        options=["None", *metadata_columns],
-        index=0,
-        key="compare_features_filter_column",
-    )
-    selected_filter_value = ""
-    if selected_filter_column != "None":
-        selected_filter_value = st.text_input(
-            "Filter value",
-            value="",
-            key="compare_features_filter_value",
-            help="Rows are kept when selected metadata converted to text matches this value exactly.",
+    else:
+        comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
+        selected_signal_option = st.selectbox(
+            "Signal",
+            options=comparison_signal_options,
+            format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
+            index=0,
+            key="compare_features_signal",
         )
-        if not selected_filter_value.strip():
-            st.info("Type a filter value to apply the metadata filter.")
+        selected_signal = comparison_signal_map[selected_signal_option]["signal"]
+        selected_signal_name = str(selected_signal["signal_name"])
+        selected_signal_slug = str(selected_signal["signal_slug"])
+        selected_features_df = selected_signal["features_df"]
+        selected_merged_df = selected_signal["merged_df"]
 
-    comparison_df, missing_group_counts = _prepare_feature_comparison_table(
-        features_df=selected_features_df,
-        merged_df=selected_merged_df,
-        feature_column=selected_feature_column,
-        group_columns=selected_group_columns,
-        color_column=selected_color_column,
-        facet_column=selected_facet_column,
-    )
-    if selected_filter_column != "None" and selected_filter_value.strip():
-        comparison_df = comparison_df.loc[
-            comparison_df[selected_filter_column].astype(str).str.strip() == selected_filter_value.strip()
-        ].copy()
-        st.caption(
-            f"Applied filter: {selected_filter_column} == '{selected_filter_value.strip()}' "
-            f"({len(comparison_df)} rows after filtering)."
-        )
-        if comparison_df.empty:
-            st.warning("No rows match the selected filter.")
-            return
-    for group_column, missing_group_count in missing_group_counts.items():
-        if missing_group_count > 0:
-            st.warning(f"Grouping column '{group_column}' has {missing_group_count} well(s) with missing labels.")
-    comparison_df = comparison_df.copy()
-    group_label_column = "__compare_group_label__"
-    comparison_df[group_label_column] = _build_group_label_column(comparison_df, selected_group_columns)
-    category_count = comparison_df[group_label_column].dropna().astype(str).nunique()
-    if category_count > 20:
-        st.warning(
-            f"Selected grouping has {category_count} categories; the plot may be crowded."
-        )
+        selectable_features: list[tuple[str, str]] = []
+        for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
+            feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
+            if feature_column is not None:
+                selectable_features.append((feature_name, feature_column))
+        if not selectable_features:
+            st.info("No selectable feature columns were found for this signal.")
+        else:
+            feature_lookup = {feature_name: feature_column for feature_name, feature_column in selectable_features}
+            selected_feature_name = st.selectbox(
+                "Feature",
+                options=[feature_name for feature_name, _ in selectable_features],
+                format_func=lambda feature: _FEATURE_LABELS.get(feature, feature),
+                key="compare_features_feature_name",
+            )
+            selected_feature_column = feature_lookup[selected_feature_name]
 
-    fig, plot_df = _build_feature_comparison_figure(
-        comparison_df=comparison_df,
-        group_columns=selected_group_columns,
-        feature_column=selected_feature_column,
-        feature_label=_FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
-        signal_name=selected_signal_name,
-        feature_name=selected_feature_name,
-        color_column=selected_color_column,
-        facet_column=selected_facet_column,
-    )
-    if selected_color_column and selected_color_column in plot_df.columns and plot_df[selected_color_column].nunique() > 12:
-        st.caption("Legend hidden because selected color column has many categories.")
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        key=f"compare_features_plot_{selected_signal_slug}",
-        config={"displayModeBar": False},
-    )
+            metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
+            if not metadata_columns:
+                st.info("Comparison plotting requires merged Rosetta metadata columns.")
+            else:
+                selected_group_columns = st.multiselect(
+                    "Grouping columns",
+                    options=metadata_columns,
+                    default=[],
+                    key="compare_features_group_columns",
+                    help="Select one or more metadata columns to define groups.",
+                )
+                if not selected_group_columns:
+                    st.info("Select at least one grouping column.")
+                else:
+                    selected_color_column = st.selectbox(
+                        "Color column (optional)",
+                        options=["None", *metadata_columns],
+                        index=0,
+                        key="compare_features_color_column",
+                    )
+                    if selected_color_column == "None":
+                        selected_color_column = None
+                    selected_facet_column = st.selectbox(
+                        "Facet column (optional)",
+                        options=["None", *metadata_columns],
+                        index=0,
+                        key="compare_features_facet_column",
+                    )
+                    if selected_facet_column == "None":
+                        selected_facet_column = None
+                    selected_filter_column = st.selectbox(
+                        'Filter (exact match, e.g. date == "2026-04-28")',
+                        options=["None", *metadata_columns],
+                        index=0,
+                        key="compare_features_filter_column",
+                    )
+                    selected_filter_value = ""
+                    if selected_filter_column != "None":
+                        selected_filter_value = st.text_input(
+                            "Filter value",
+                            value="",
+                            key="compare_features_filter_value",
+                            help="Rows are kept when selected metadata converted to text matches this value exactly.",
+                        )
+                        if not selected_filter_value.strip():
+                            st.info("Type a filter value to apply the metadata filter.")
 
-    st.caption("Comparison table used for plotting")
-    st.dataframe(comparison_df, use_container_width=True)
+                    comparison_df, missing_group_counts = _prepare_feature_comparison_table(
+                        features_df=selected_features_df,
+                        merged_df=selected_merged_df,
+                        feature_column=selected_feature_column,
+                        group_columns=selected_group_columns,
+                        color_column=selected_color_column,
+                        facet_column=selected_facet_column,
+                    )
+                    if selected_filter_column != "None" and selected_filter_value.strip():
+                        comparison_df = comparison_df.loc[
+                            comparison_df[selected_filter_column].astype(str).str.strip() == selected_filter_value.strip()
+                        ].copy()
+                        st.caption(
+                            f"Applied filter: {selected_filter_column} == '{selected_filter_value.strip()}' "
+                            f"({len(comparison_df)} rows after filtering)."
+                        )
+                        if comparison_df.empty:
+                            st.warning("No rows match the selected filter.")
+                    if not comparison_df.empty:
+                        for group_column, missing_group_count in missing_group_counts.items():
+                            if missing_group_count > 0:
+                                st.warning(f"Grouping column '{group_column}' has {missing_group_count} well(s) with missing labels.")
+                        comparison_df = comparison_df.copy()
+                        group_label_column = "__compare_group_label__"
+                        comparison_df[group_label_column] = _build_group_label_column(comparison_df, selected_group_columns)
+                        category_count = comparison_df[group_label_column].dropna().astype(str).nunique()
+                        if category_count > 20:
+                            st.warning(
+                                f"Selected grouping has {category_count} categories; the plot may be crowded."
+                            )
+
+                        fig, plot_df = _build_feature_comparison_figure(
+                            comparison_df=comparison_df,
+                            group_columns=selected_group_columns,
+                            feature_column=selected_feature_column,
+                            feature_label=_FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+                            signal_name=selected_signal_name,
+                            feature_name=selected_feature_name,
+                            color_column=selected_color_column,
+                            facet_column=selected_facet_column,
+                        )
+                        if (
+                            selected_color_column
+                            and selected_color_column in plot_df.columns
+                            and plot_df[selected_color_column].nunique() > 12
+                        ):
+                            st.caption("Legend hidden because selected color column has many categories.")
+                        st.plotly_chart(
+                            fig,
+                            use_container_width=True,
+                            key=f"compare_features_plot_{selected_signal_slug}",
+                            config={"displayModeBar": False},
+                        )
+
+                        st.caption("Comparison table used for plotting")
+                        st.dataframe(comparison_df, use_container_width=True)
+                        comparison_export_name = (
+                            f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{'_'.join(selected_group_columns)}"
+                        )
+                        st.download_button(
+                            label="Download comparison table (CSV)",
+                            data=comparison_df.to_csv(index=False),
+                            file_name=f"{comparison_export_name}.csv",
+                            mime="text/csv",
+                            key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{'_'.join(selected_group_columns)}",
+                            on_click="ignore",
+                        )
+                        comparison_export_df = comparison_df.copy()
+                        comparison_export_fig = fig
+
+    bundle_bytes = _build_analysis_bundle_zip(
+        signal_results=rendered_signal_results,
+        plate_size=plate_size,
+        config=config if isinstance(config, dict) else None,
+        comparison_df=comparison_export_df,
+        comparison_name=comparison_export_name,
+        comparison_fig=comparison_export_fig,
+    )
     st.download_button(
-        label="Download comparison table (CSV)",
-        data=comparison_df.to_csv(index=False),
-        file_name=(
-            f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{'_'.join(selected_group_columns)}.csv"
-        ),
-        mime="text/csv",
-        key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{'_'.join(selected_group_columns)}",
+        label="Download analysis bundle (.zip)",
+        data=bundle_bytes,
+        file_name="rosettier_analysis_bundle.zip",
+        mime="application/zip",
+        key="download_analysis_bundle_zip",
         on_click="ignore",
     )
 
