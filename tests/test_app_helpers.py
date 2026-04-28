@@ -475,6 +475,95 @@ def test_plotly_image_bytes_uses_requested_format():
     assert svg_bytes == b"svg-bytes"
 
 
+def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
+    import sys
+    import types
+    import plotly.graph_objects as go
+
+    class DummyAxis:
+        def __init__(self):
+            self.lines: list[tuple[list[float], list[float]]] = []
+
+        def plot(self, x_values, y_values, **kwargs):
+            self.lines.append((list(x_values), list(y_values)))
+
+        def boxplot(self, *args, **kwargs):
+            return None
+
+        def bar(self, *args, **kwargs):
+            return None
+
+        def set_xticks(self, *args, **kwargs):
+            return None
+
+        def set_xticklabels(self, *args, **kwargs):
+            return None
+
+        def set_title(self, *args, **kwargs):
+            return None
+
+        def set_xlabel(self, *args, **kwargs):
+            return None
+
+        def set_ylabel(self, *args, **kwargs):
+            return None
+
+        def grid(self, *args, **kwargs):
+            return None
+
+        def get_legend_handles_labels(self):
+            return ([], [])
+
+        def legend(self, *args, **kwargs):
+            return None
+
+    class DummyFigure:
+        def __init__(self):
+            self.axis = DummyAxis()
+
+        def add_subplot(self, *_args, **_kwargs):
+            return self.axis
+
+        def tight_layout(self):
+            return None
+
+        def savefig(self, buffer, **_kwargs):
+            buffer.write(b"dummy-png")
+
+    created_figures: list[DummyFigure] = []
+
+    class DummyPyplot:
+        def figure(self, **_kwargs):
+            figure = DummyFigure()
+            created_figures.append(figure)
+            return figure
+
+        def close(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scattergl(
+            x=[0.0, 1.0, 2.0],
+            y=[0.1, 0.2, 0.3],
+            mode="lines",
+            name="All wells",
+        )
+    )
+    fig.update_layout(title="Raw Signal_1 curves")
+    fig.update_xaxes(title="Elapsed time (minutes)")
+    fig.update_yaxes(title="Signal_1")
+
+    png_bytes = app._plotly_image_bytes(fig, image_format="png")
+
+    assert isinstance(png_bytes, bytes)
+    assert len(png_bytes) > 0
+    assert created_figures and created_figures[0].axis.lines == [([0.0, 1.0, 2.0], [0.1, 0.2, 0.3])]
+
+
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
     captions: list[str] = []
