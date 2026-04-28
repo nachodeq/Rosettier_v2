@@ -413,17 +413,6 @@ def test_build_feature_comparison_figure_includes_color_column_legend_entries():
     assert "r2" in trace_names
 
 
-def test_try_plotly_static_export_bytes_handles_kaleido_chrome_failure():
-    class DummyFigure:
-        def to_image(self, *, format, engine):
-            raise RuntimeError("Kaleido requires Google Chrome to be installed.")
-
-    image, warning = app._try_plotly_static_export_bytes(DummyFigure(), format="png")
-
-    assert image is None
-    assert warning == "PNG/SVG export requires Kaleido with Chrome installed. HTML export is available."
-
-
 def test_plotly_html_bytes_returns_self_contained_html():
     class DummyFigure:
         def to_html(self, **kwargs):
@@ -435,16 +424,29 @@ def test_plotly_html_bytes_returns_self_contained_html():
     assert html_bytes == b"<html>offline</html>"
 
 
-def test_plotly_static_export_status_missing_chrome(monkeypatch):
-    monkeypatch.setitem(__import__("sys").modules, "kaleido", object())
-    monkeypatch.setattr(app.shutil, "which", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(app.os.path, "exists", lambda *_args, **_kwargs: False)
+def test_render_plot_download_buttons_renders_html_button_only():
+    calls: list[dict] = []
 
-    ready, message = app._plotly_static_export_status()
+    class DummyFigure:
+        def to_html(self, **kwargs):
+            assert kwargs["full_html"] is True
+            assert kwargs["include_plotlyjs"] is True
+            return "<html>offline</html>"
 
-    assert ready is False
-    assert message is not None
-    assert "Chrome" in message
+    class DummySt:
+        def download_button(self, **kwargs):
+            calls.append(kwargs)
+
+    app._render_plot_download_buttons(
+        DummySt(),
+        fig=DummyFigure(),
+        filename_stem="my_plot",
+        key_prefix="plot",
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["label"] == "Download plot (HTML)"
+    assert calls[0]["file_name"] == "my_plot.html"
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
