@@ -738,8 +738,6 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
     try:
         import matplotlib.pyplot as plt
     except ModuleNotFoundError:
-        if hasattr(fig, "to_image"):
-            return fig.to_image(format=image_format)
         raise RuntimeError("PNG/SVG export requires matplotlib.")
 
     figure = plt.figure(figsize=(10, 6))
@@ -812,6 +810,20 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 alpha=0.85,
                 markersize=4.8,
                 linewidth=1.1,
+                label=trace_name if trace_name else "_nolegend_",
+            )
+            continue
+
+        if trace_type == "bar":
+            x_values = _x_values_to_numeric(getattr(trace, "x", []))
+            y_values = [float(value) for value in list(getattr(trace, "y", []) or [])]
+            if not x_values or not y_values:
+                continue
+            axis.bar(
+                x_values,
+                y_values,
+                alpha=0.85,
+                width=0.6,
                 label=trace_name if trace_name else "_nolegend_",
             )
 
