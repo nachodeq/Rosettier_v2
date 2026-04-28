@@ -236,6 +236,16 @@ def test_filter_selected_wells_applies_plate_selection():
     assert out["well"].tolist() == ["A02"]
 
 
+def test_default_group_variable_index_prefers_plate_then_date():
+    metadata_columns = ["condition", "Date", "plate_id", "batch"]
+    assert app._default_group_variable_index(metadata_columns) == 2
+
+
+def test_default_group_variable_index_returns_first_when_no_priority_token():
+    metadata_columns = ["condition", "batch", "strain"]
+    assert app._default_group_variable_index(metadata_columns) == 0
+
+
 def test_resolve_feature_column_prefers_signal_prefixed_name():
     features = pd.DataFrame({"well": ["A01"], "OD_auc": [1.23], "auc": [9.99]})
     assert app._resolve_feature_column(features, "OD", "auc") == "OD_auc"
