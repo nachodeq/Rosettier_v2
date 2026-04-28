@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from io import BytesIO, StringIO
 import json
+import os
+import shutil
 import zipfile
 from collections import Counter
 
@@ -549,16 +551,16 @@ def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[s
 
 
 def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
-    """Return plot mode: box when at least one group has replicates, else points."""
+    """Return plot mode: box when at least one group has >2 wells, else points."""
     if comparison_df.empty:
         return "points"
 
     group_label_column = "__compare_group_label__"
     if group_label_column in comparison_df.columns:
         group_sizes = comparison_df[group_label_column].value_counts(dropna=False)
-        return "box" if int(group_sizes.max()) >= 2 else "points"
+        return "box" if int(group_sizes.max()) > 2 else "points"
 
-    return "box" if len(comparison_df) >= 2 else "points"
+    return "box" if len(comparison_df) > 2 else "points"
 
 
 def _build_feature_comparison_figure(
@@ -611,7 +613,9 @@ def _build_feature_comparison_figure(
             pointpos=0,
             marker={"size": 7, "opacity": 0.80, "line": {"width": 0}},
             line={"width": 1.0, "color": "#666666"},
-            fillcolor="rgba(170, 170, 170, 0.20)",
+            fillcolor="rgba(0, 0, 0, 0)",
+            whiskerwidth=0.7,
+            boxpoints="all",
         )
         if color_arg is None:
             fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
@@ -645,7 +649,64 @@ def _build_feature_comparison_figure(
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
         fig.update_layout(title=f"{signal_name}: {feature_label} points by {title_suffix} (<3 wells)")
+    if color_arg:
+        fig.update_traces(
+            customdata=plot_df[["well", group_label_column, color_arg]],
+            hovertemplate=(
+                "Well: %{customdata[0]}<br>"
+                f"Group: %{{customdata[1]}}<br>{feature_label}: %{{y:.5g}}<br>"
+                f"{color_arg}: %{{customdata[2]}}<extra></extra>"
+            ),
+        )
+    else:
+        fig.update_traces(
+            customdata=plot_df[["well", group_label_column]],
+            hovertemplate=(
+                "Well: %{customdata[0]}<br>"
+                "Group: %{customdata[1]}<br>"
+                f"{feature_label}: %{{y:.5g}}<extra></extra>"
+            ),
+        )
     return fig, plot_df
+
+
+def _plotly_html_bytes(fig) -> bytes:
+    """Serialize Plotly figure to self-contained HTML bytes for offline downloads."""
+    return fig.to_html(full_html=True, include_plotlyjs=True).encode("utf-8")
+
+
+def _plotly_static_export_status() -> tuple[bool, str | None]:
+    """Return whether Plotly static export backend is available for PNG/SVG."""
+    try:
+        import kaleido  # noqa: F401
+    except ModuleNotFoundError:
+        return False, "PNG/SVG export requires the 'kaleido' package in the app dependencies."
+
+    chrome_candidates = [
+        "google-chrome",
+        "google-chrome-stable",
+        "chrome",
+        "chromium",
+        "chromium-browser",
+        "msedge",
+    ]
+    if any(shutil.which(candidate) for candidate in chrome_candidates):
+        return True, None
+
+    platform_paths = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    if any(os.path.exists(path) for path in platform_paths):
+        return True, None
+
+    return False, (
+        "PNG/SVG export requires a local Chrome installation that Kaleido can find. "
+        "Install Chrome once, then restart the app."
+    )
 
 
 def _try_plotly_static_export_bytes(fig, *, format: str) -> tuple[bytes | None, str | None]:
@@ -659,6 +720,44 @@ def _try_plotly_static_export_bytes(fig, *, format: str) -> tuple[bytes | None, 
         if "kaleido requires google chrome" in message or ("kaleido" in message and "chrome" in message):
             return None, "PNG/SVG export requires Kaleido with Chrome installed. HTML export is available."
         return None, f"{format.upper()} export unavailable in this environment."
+
+
+def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
+    """Render HTML/PNG/SVG download buttons for a Plotly figure."""
+    st.download_button(
+        label="Download plot (HTML)",
+        data=_plotly_html_bytes(fig),
+        file_name=f"{filename_stem}.html",
+        mime="text/html",
+        key=f"{key_prefix}_html",
+        on_click="ignore",
+    )
+
+    png_bytes, png_warning = _try_plotly_static_export_bytes(fig, format="png")
+    if png_bytes is None:
+        st.info(png_warning or "PNG export unavailable in this environment.")
+    else:
+        st.download_button(
+            label="Download plot (PNG)",
+            data=png_bytes,
+            file_name=f"{filename_stem}.png",
+            mime="image/png",
+            key=f"{key_prefix}_png",
+            on_click="ignore",
+        )
+
+    svg_bytes, svg_warning = _try_plotly_static_export_bytes(fig, format="svg")
+    if svg_bytes is None:
+        st.info(svg_warning or "SVG export unavailable in this environment.")
+    else:
+        st.download_button(
+            label="Download plot (SVG)",
+            data=svg_bytes,
+            file_name=f"{filename_stem}.svg",
+            mime="image/svg+xml",
+            key=f"{key_prefix}_svg",
+            on_click="ignore",
+        )
 
 
 def _comparison_signal_options(available_comparison: list[dict[str, object]]) -> tuple[list[str], dict[str, dict[str, object]]]:
@@ -874,13 +973,13 @@ def _build_analysis_bundle_zip(
 
             raw_curve_fig = signal_result.get("raw_curve_fig")
             if raw_curve_fig is not None:
-                bundle.writestr(f"{signal_dir}/raw_curves_plot.html", raw_curve_fig.to_html(full_html=True, include_plotlyjs="cdn"))
+                bundle.writestr(f"{signal_dir}/raw_curves_plot.html", _plotly_html_bytes(raw_curve_fig))
 
         if isinstance(comparison_df, pd.DataFrame) and not comparison_df.empty:
             table_name = comparison_name or "comparison_table"
             bundle.writestr(f"comparison/{table_name}.csv", comparison_df.to_csv(index=False))
         if comparison_fig is not None:
-            bundle.writestr("comparison/comparison_plot.html", comparison_fig.to_html(full_html=True, include_plotlyjs="cdn"))
+            bundle.writestr("comparison/comparison_plot.html", _plotly_html_bytes(comparison_fig))
 
         manifest_json = json.dumps(manifest, indent=2)
         bundle.writestr("manifest.json", manifest_json)
@@ -1044,6 +1143,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
     threshold: float | None = None
     if "time_to_threshold" in selected_features:
         threshold = float(st.number_input("Threshold (for time to threshold)", value=0.5, step=0.1, key="analyze_threshold"))
+
+    static_export_ready, static_export_message = _plotly_static_export_status()
+    if static_export_ready:
+        st.caption("Plot export backend detected: HTML, PNG, and SVG downloads are available.")
+    elif static_export_message:
+        st.info(f"{static_export_message} You can still export HTML plots offline.")
 
     run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
     if run_analysis:
@@ -1278,6 +1383,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
             )
             st.plotly_chart(fig, use_container_width=True, key=f"analyze_raw_curves_plot_{signal_key_slug}")
+            _render_plot_download_buttons(
+                st,
+                fig=fig,
+                filename_stem=f"rosettier_raw_curves_{signal_slug}",
+                key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
+            )
 
             try:
                 feature_source = merged_df if merged_df is not None else filtered_tidy_df
@@ -1589,6 +1700,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             use_container_width=True,
                             key=f"compare_features_plot_{selected_signal_slug}",
                             config={"displayModeBar": False},
+                        )
+                        _render_plot_download_buttons(
+                            st,
+                            fig=fig,
+                            filename_stem=f"{selected_signal_slug}_{selected_feature_name}_comparison",
+                            key_prefix=f"download_compare_plot_{selected_signal_slug}_{selected_feature_name}",
                         )
 
                         st.caption("Comparison table used for plotting")
