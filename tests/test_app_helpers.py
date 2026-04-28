@@ -130,3 +130,39 @@ def test_make_plate_figure_384_hides_well_labels_to_avoid_overcrowding():
     assert trace.mode == "markers"
     assert trace.text is None
     assert "Well: A01" in trace.hovertext[0]
+
+
+def test_prepare_raw_curve_plot_df_includes_selected_metadata_group():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A01", "A02"],
+            "time": [0.0, 10.0, 0.0],
+            "value": [0.1, 0.2, 0.05],
+        }
+    )
+    merged = pd.DataFrame(
+        {
+            "well": ["A01", "A02"],
+            "condition": ["drug", "control"],
+        }
+    )
+
+    out = app._prepare_raw_curve_plot_df(tidy, wells_to_plot=["A01"], merged_df=merged, group_column="condition")
+
+    assert list(out["well"]) == ["A01", "A01"]
+    assert list(out["metadata_group"]) == ["drug", "drug"]
+
+
+def test_prepare_raw_curve_plot_df_defaults_empty_group_when_not_selected():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02"],
+            "time": [5.0, 5.0],
+            "value": [0.12, 0.2],
+        }
+    )
+
+    out = app._prepare_raw_curve_plot_df(tidy, wells_to_plot=["A01", "A02"], merged_df=None, group_column=None)
+
+    assert list(out["well"]) == ["A01", "A02"]
+    assert set(out["metadata_group"]) == {""}
