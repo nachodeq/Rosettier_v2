@@ -518,6 +518,44 @@ def _prepare_raw_curve_plot_df(
     return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
 
 
+def _rename_value_column_for_signal(df: pd.DataFrame, signal_name: str) -> pd.DataFrame:
+    """Return a copy with canonical `value` renamed for user-facing display."""
+    if "value" not in df.columns:
+        return df.copy()
+    renamed = df.copy()
+    label = str(signal_name).strip() or "OD"
+    return renamed.rename(columns={"value": label})
+
+
+def _metadata_color_value_map(plot_df: pd.DataFrame, metadata_column: str | None) -> dict[str, str]:
+    """Return deterministic colors for metadata values used in raw curve grouping."""
+    if not metadata_column or metadata_column not in plot_df.columns:
+        return {}
+    unique_values = sorted(plot_df[metadata_column].dropna().astype(str).unique().tolist())
+    if not unique_values:
+        return {}
+    palette = [
+        "#4c78a8",
+        "#f58518",
+        "#54a24b",
+        "#e45756",
+        "#72b7b2",
+        "#b279a2",
+        "#ff9da6",
+        "#9d755d",
+        "#bab0ac",
+        "#2f4b7c",
+    ]
+    return {value: palette[idx % len(palette)] for idx, value in enumerate(unique_values)}
+
+
+def _filter_selected_wells(tidy_df: pd.DataFrame, selected_wells: list[str]) -> pd.DataFrame:
+    """Return wells filtered by plate selection; empty selection means all wells."""
+    wells = sorted(tidy_df["well"].dropna().astype(str).unique().tolist())
+    wells_to_plot = selected_wells if selected_wells else wells
+    return tidy_df.loc[tidy_df["well"].isin(wells_to_plot)].copy()
+
+
 def _compute_selected_features(
     feature_source: pd.DataFrame,
     *,
@@ -554,7 +592,7 @@ def _compute_selected_features(
 
 
 def _render_analyze_data(st, plate_size: int) -> None:
-    """Mode: validate, parse, configure analysis, QC, and feature exports."""
+    """Mode: parse one or more signals, show raw curves first, and keep QC secondary."""
     st.header("Analyze Data")
 
     if "analyze_results" not in st.session_state:
@@ -585,13 +623,58 @@ def _render_analyze_data(st, plate_size: int) -> None:
             type=["csv", "tsv"],
             key="layout_upload",
         )
+    signal_count = int(
+        st.number_input(
+            "Number of signals/files",
+            min_value=1,
+            max_value=8,
+            value=int(st.session_state.get("analyze_signal_count", 1)),
+            step=1,
+            key="analyze_signal_count",
+            help="Each uploaded plate-reader file corresponds to one named signal.",
+        )
+    )
 
-    delimiter_choice = st.selectbox("Delimiter", options=["auto", "tab", "comma", "semicolon"], index=0, key="analyze_delimiter")
-    decimal_choice = st.selectbox("Decimal separator", options=["auto", "comma", "point"], index=0, key="analyze_decimal")
-    time_column_name = st.text_input("Time column name", value="Time", key="analyze_time_column")
+    st.subheader("3. Signal inputs")
+    signal_entries: list[dict[str, object]] = []
+    for idx in range(signal_count):
+        with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
+            uploaded_file = st.file_uploader(
+                f"Measurement file for signal {idx + 1} (CSV/TSV; wide format)",
+                type=["csv", "tsv"],
+                key=f"analyze_measurements_upload_{idx}",
+            )
+            signal_name = st.text_input(
+                "Signal name",
+                value=f"Signal_{idx + 1}",
+                help="Examples: OD, GFP, RFP, luminescence.",
+                key=f"analyze_signal_name_{idx}",
+            )
+            delimiter_choice = st.selectbox(
+                "Delimiter",
+                options=["auto", "tab", "comma", "semicolon"],
+                index=0,
+                key=f"analyze_delimiter_{idx}",
+            )
+            decimal_choice = st.selectbox(
+                "Decimal separator",
+                options=["auto", "comma", "point"],
+                index=0,
+                key=f"analyze_decimal_{idx}",
+            )
+            time_column_name = st.text_input("Time column name", value="Time", key=f"analyze_time_column_{idx}")
+            signal_entries.append(
+                {
+                    "index": idx,
+                    "uploaded_file": uploaded_file,
+                    "signal_name": signal_name,
+                    "delimiter": delimiter_choice,
+                    "decimal": decimal_choice,
+                    "time_column": time_column_name,
+                }
+            )
 
-    st.subheader("3. Analysis setup")
-    signal_name = st.text_input("Signal name", value="OD", help="Examples: OD, GFP, RFP, luminescence.", key="analyze_signal_name")
+    st.subheader("4. Analysis setup")
     enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
     min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
@@ -608,8 +691,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
     if run_analysis:
-        if measurement_file is None:
-            st.info("Upload measurements to run validation and parsing.")
+        valid_signals = [entry for entry in signal_entries if entry["uploaded_file"] is not None]
+        if not valid_signals:
+            st.info("Upload at least one measurements file to run analysis.")
         elif enable_time_filter and min_time > max_time:
             st.error("Time filter is enabled, but min time is greater than max time.")
         elif "time_to_threshold" in selected_features and threshold is None:
@@ -623,13 +707,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
             else:
                 layout_df = None
 
-            sanitized_signal_name = signal_name.strip() or "OD"
             layout_well_column = None
             if layout_df is not None:
                 layout_well_column = "well" if "well" in layout_df.columns else "Well"
 
             config = {
-                "signal_name": sanitized_signal_name,
                 "enable_time_filter": enable_time_filter,
                 "min_time": float(min_time),
                 "max_time": float(max_time),
@@ -639,247 +721,275 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
             st.session_state["analyze_results"] = {"config": config}
 
-            measurement_text = measurement_file.getvalue().decode("utf-8")
-            st.session_state["analyze_results"]["measurement_text"] = measurement_text
+            signal_payloads: list[dict[str, object]] = []
+            for entry in valid_signals:
+                uploaded_file = entry["uploaded_file"]
+                signal_payloads.append(
+                    {
+                        "index": entry["index"],
+                        "signal_name": (str(entry["signal_name"]).strip() or f"Signal_{entry['index'] + 1}"),
+                        "delimiter": entry["delimiter"],
+                        "decimal": entry["decimal"],
+                        "time_column": entry["time_column"],
+                        "measurement_text": uploaded_file.getvalue().decode("utf-8"),
+                    }
+                )
+            st.session_state["analyze_results"]["signals"] = signal_payloads
             st.session_state["analyze_results"]["layout_df"] = layout_df
             st.session_state["analyze_results"]["layout_well_column"] = layout_well_column
             st.session_state["analyze_results"]["errors"] = []
 
     results = st.session_state["analyze_results"]
 
-    tidy_df: pd.DataFrame | None = None
-    filtered_tidy_df: pd.DataFrame | None = None
-    merged_df: pd.DataFrame | None = None
-    features_df: pd.DataFrame | None = None
-    qc: dict | None = None
     config = results.get("config")
 
-    st.subheader("4. Validate and parse")
-    if "measurement_text" not in results:
+    st.subheader("5. Validate, parse, visualize, and export")
+    if "signals" not in results:
         st.info("Configure analysis setup and click 'Run analysis'.")
-    else:
-        try:
-            tidy_df = parse_plate_reader_wide(
-                results["measurement_text"],
-                plate_size=plate_size,
-                time_col=time_column_name,
-                delimiter=delimiter_choice,
-                decimal=decimal_choice,
-            )
-            filtered_tidy_df = _filter_tidy_by_time_window(
-                tidy_df,
-                enable_time_filter=bool(config.get("enable_time_filter")) if config else False,
-                min_time=config.get("min_time") if config else None,
-                max_time=config.get("max_time") if config else None,
-            )
-            st.success("Measurements validated and parsed to canonical tidy format.")
-            st.caption(f"Preview only (first 12 rows) of {len(tidy_df)} parsed rows.")
-            st.dataframe(tidy_df.head(12), use_container_width=True)
-            st.write(
-                f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
-                f"{tidy_df['time'].nunique()} timepoints, time range {tidy_df['time'].min()} to {tidy_df['time'].max()} minutes."
-            )
-            if config:
-                st.write(
-                    f"Selected analysis range: {config['min_time']} to {config['max_time']} minutes "
-                    f"(filter {'enabled' if config['enable_time_filter'] else 'disabled'})."
-                )
-            st.write(
-                f"Rows/timepoints after selection: {len(filtered_tidy_df)} rows, "
-                f"{filtered_tidy_df['time'].nunique()} timepoints."
-            )
-        except Exception as exc:  # pragma: no cover - defensive streamlit display
-            st.error(f"Failed to parse measurements: {exc}")
-
-    if filtered_tidy_df is not None:
-        layout_df = results.get("layout_df")
-        layout_well_column = results.get("layout_well_column")
-        if layout_df is not None:
-            try:
-                validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=layout_well_column)
-                merged_df = merge_measurements_with_layout(
-                    filtered_tidy_df,
-                    validated_layout,
-                    plate_size=plate_size,
-                    layout_well_col=layout_well_column,
-                )
-                st.success("Rosetta/layout validated and merged.")
-                st.caption(f"Merged preview only (first 12 rows) of {len(merged_df)} rows.")
-                st.dataframe(merged_df.head(12), use_container_width=True)
-            except Exception as exc:  # pragma: no cover - defensive streamlit display
-                st.error(f"Failed to validate/merge Rosetta layout: {exc}")
-
-    st.subheader("5. QC summary")
-    if filtered_tidy_df is None:
-        st.info("QC summary will appear after successful parsing.")
-    else:
-        try:
-            qc = qc_summary(filtered_tidy_df)
-            overall = qc["missing"]["overall"]
-            st.dataframe(overall, use_container_width=True)
-            st.dataframe(qc["constant_wells"].head(12), use_container_width=True)
-            st.dataframe(qc["outlier_wells"].head(12), use_container_width=True)
-            st.dataframe(qc["edge_effects"], use_container_width=True)
-        except Exception as exc:  # pragma: no cover - defensive streamlit display
-            st.error(f"Failed to compute QC summary: {exc}")
-
-    st.subheader("6. Feature extraction")
-    if filtered_tidy_df is None:
-        st.info("Feature extraction results will appear after successful parsing.")
-    else:
-        try:
-            feature_source = merged_df if merged_df is not None else filtered_tidy_df
-            features_df = _compute_selected_features(
-                feature_source,
-                selected_features=config.get("selected_features", []) if config else [],
-                threshold=config.get("threshold") if config else None,
-                signal_name=config.get("signal_name", "OD") if config else "OD",
-            )
-            st.write(f"Signal: **{config.get('signal_name', 'OD') if config else 'OD'}**")
-            if features_df.shape[1] == 3:
-                st.info("No features selected.")
-            else:
-                st.dataframe(features_df.head(12), use_container_width=True)
-        except Exception as exc:  # pragma: no cover - defensive streamlit display
-            st.error(f"Failed to extract features: {exc}")
-
-    st.subheader("7. Raw curves")
-    if filtered_tidy_df is None:
-        st.info("Raw curves will appear after successful parsing.")
-    else:
-        import plotly.express as px
-
-        available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
-        selected_wells = st.multiselect(
-            "Wells to plot",
-            options=available_wells,
-            default=[],
-            key="analyze_raw_curve_wells",
-            help="Leave empty to plot all wells.",
-        )
-        wells_to_plot = selected_wells if selected_wells else available_wells
-
-        metadata_columns = _metadata_columns_for_raw_curves(merged_df)
-        selected_group_column = None
-        if metadata_columns:
-            selected_group_column = st.selectbox(
-                "Metadata column for hover labels (optional)",
-                options=["None", *metadata_columns],
-                index=0,
-                key="analyze_raw_curve_group_column",
-            )
-            if selected_group_column == "None":
-                selected_group_column = None
-
-        raw_plot_df = _prepare_raw_curve_plot_df(
-            filtered_tidy_df,
-            wells_to_plot=wells_to_plot,
-            merged_df=merged_df,
-            group_column=selected_group_column,
-        )
-
-        fig = px.line(
-            raw_plot_df,
-            x="time",
-            y="value",
-            color="well",
-            line_group="well",
-            labels={"time": "Elapsed time (minutes)", "value": "Raw value", "well": "Well"},
-            title=f"Raw {config.get('signal_name', 'OD') if config else 'OD'} curves",
-            custom_data=["metadata_group"],
-        )
-        fig.update_traces(mode="lines", opacity=0.55, line={"width": 1.3})
-        if selected_group_column is not None:
-            fig.update_traces(
-                hovertemplate=(
-                    "Well: %{fullData.name}<br>"
-                    "Time (min): %{x:.3f}<br>"
-                    "Value: %{y:.5g}<br>"
-                    f"{selected_group_column}: %{{customdata[0]}}<extra></extra>"
-                )
-            )
-        else:
-            fig.update_traces(
-                hovertemplate="Well: %{fullData.name}<br>Time (min): %{x:.3f}<br>Value: %{y:.5g}<extra></extra>"
-            )
-        st.plotly_chart(fig, use_container_width=True, key="analyze_raw_curves_plot")
-
-    st.subheader("8. Results / Export")
-    if filtered_tidy_df is None:
-        st.info("Results/export placeholders will activate after parsing.")
         return
 
-    signal_slug = (config.get("signal_name", "OD") if config else "OD").strip().replace(" ", "_")
-    st.caption("Download parsed tidy measurements, merged data, selected features, and QC tables.")
-    st.download_button(
-        label="Download tidy (CSV)",
-        data=filtered_tidy_df.to_csv(index=False),
-        file_name=f"rosettier_tidy_{signal_slug}.csv",
-        mime="text/csv",
-        key="download_tidy_csv",
-        on_click="ignore",
-    )
-    if merged_df is not None:
-        st.download_button(
-            label="Download merged data (CSV)",
-            data=merged_df.to_csv(index=False),
-            file_name=f"rosettier_merged_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_merged_csv",
-            on_click="ignore",
-        )
+    signal_payloads = results.get("signals", [])
+    if not signal_payloads:
+        st.info("No signal payloads available to render.")
+        return
 
-    if qc is not None:
-        st.download_button(
-            label="Download QC missing overall (CSV)",
-            data=qc["missing"]["overall"].to_csv(index=False),
-            file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_qc_missing_overall_csv",
-            on_click="ignore",
-        )
-        st.download_button(
-            label="Download QC missing per well (CSV)",
-            data=qc["missing"]["per_well"].to_csv(index=False),
-            file_name=f"rosettier_qc_missing_per_well_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_qc_missing_per_well_csv",
-            on_click="ignore",
-        )
-        st.download_button(
-            label="Download QC constant wells (CSV)",
-            data=qc["constant_wells"].to_csv(index=False),
-            file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_qc_constant_wells_csv",
-            on_click="ignore",
-        )
-        st.download_button(
-            label="Download QC outlier wells (CSV)",
-            data=qc["outlier_wells"].to_csv(index=False),
-            file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_qc_outlier_wells_csv",
-            on_click="ignore",
-        )
-        st.download_button(
-            label="Download QC edge effects (CSV)",
-            data=qc["edge_effects"].to_csv(index=False),
-            file_name=f"rosettier_qc_edge_effects_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_qc_edge_effects_csv",
-            on_click="ignore",
-        )
+    signal_labels = [str(payload["signal_name"]) for payload in signal_payloads]
+    signal_tabs = st.tabs(signal_labels)
+    for signal_tab, payload in zip(signal_tabs, signal_payloads, strict=False):
+        with signal_tab:
+            tidy_df: pd.DataFrame | None = None
+            filtered_tidy_df: pd.DataFrame | None = None
+            merged_df: pd.DataFrame | None = None
+            features_df: pd.DataFrame | None = None
+            qc: dict | None = None
+            signal_name = str(payload["signal_name"]).strip() or "OD"
+            signal_slug = signal_name.replace(" ", "_")
+            st.markdown(f"### Signal: `{signal_name}`")
 
-    if features_df is not None and features_df.shape[1] > 3:
-        st.download_button(
-            label="Download features (CSV)",
-            data=features_df.to_csv(index=False),
-            file_name=f"rosettier_features_{signal_slug}.csv",
-            mime="text/csv",
-            key="download_features_csv",
-            on_click="ignore",
-        )
+            st.caption("Parsed preview")
+            try:
+                tidy_df = parse_plate_reader_wide(
+                    payload["measurement_text"],
+                    plate_size=plate_size,
+                    time_col=str(payload["time_column"]),
+                    delimiter=str(payload["delimiter"]),
+                    decimal=str(payload["decimal"]),
+                )
+                filtered_tidy_df = _filter_tidy_by_time_window(
+                    tidy_df,
+                    enable_time_filter=bool(config.get("enable_time_filter")) if config else False,
+                    min_time=config.get("min_time") if config else None,
+                    max_time=config.get("max_time") if config else None,
+                )
+                tidy_display_df = _rename_value_column_for_signal(tidy_df.head(12), signal_name=signal_name)
+                st.dataframe(tidy_display_df, use_container_width=True)
+                st.write(
+                    f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
+                    f"{tidy_df['time'].nunique()} timepoints, time range {tidy_df['time'].min()} to {tidy_df['time'].max()} minutes."
+                )
+            except Exception as exc:  # pragma: no cover - defensive streamlit display
+                st.error(f"Failed to parse measurements for {signal_name}: {exc}")
+                continue
+
+            layout_df = results.get("layout_df")
+            layout_well_column = results.get("layout_well_column")
+            if filtered_tidy_df is not None and layout_df is not None:
+                try:
+                    validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=layout_well_column)
+                    merged_df = merge_measurements_with_layout(
+                        filtered_tidy_df,
+                        validated_layout,
+                        plate_size=plate_size,
+                        layout_well_col=layout_well_column,
+                    )
+                    merged_preview_df = _rename_value_column_for_signal(merged_df.head(12), signal_name=signal_name)
+                    st.caption("Merged preview")
+                    st.dataframe(merged_preview_df, use_container_width=True)
+                except Exception as exc:  # pragma: no cover - defensive streamlit display
+                    st.error(f"Failed to validate/merge Rosetta layout for {signal_name}: {exc}")
+
+            st.markdown("#### Raw curves")
+            available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
+            selector_df = _build_rosetta_table(PlateSpec.from_size(plate_size))
+            selector_df = selector_df.loc[selector_df["well"].isin(available_wells)].reset_index(drop=True)
+            selected_wells_key = f"analyze_selected_wells_{signal_slug}"
+            if selected_wells_key not in st.session_state:
+                st.session_state[selected_wells_key] = []
+            selector_figure = _make_plate_figure(
+                selector_df,
+                PlateSpec.from_size(plate_size),
+                selected_wells=st.session_state[selected_wells_key],
+                color_variable=None,
+            )
+            selector_event = st.plotly_chart(
+                selector_figure,
+                use_container_width=True,
+                key=f"analyze_plate_selector_{signal_slug}",
+                on_select="rerun",
+            )
+            just_selected = _selected_wells_from_event(selector_event, selector_df)
+            if _event_contains_selection_payload(selector_event):
+                st.session_state[selected_wells_key] = sorted(set(just_selected))
+            if st.button("Clear plate selection", key=f"analyze_clear_plate_selection_{signal_slug}"):
+                st.session_state[selected_wells_key] = []
+                st.rerun()
+            st.caption(
+                "No wells selected plots all wells. "
+                f"Current selection count: {len(st.session_state[selected_wells_key])}"
+            )
+
+            wells_filtered_df = _filter_selected_wells(filtered_tidy_df, st.session_state[selected_wells_key])
+            plot_df = wells_filtered_df[["well", "time", "value"]].copy()
+            plot_df["metadata_label"] = "—"
+
+            metadata_columns = _metadata_columns_for_raw_curves(merged_df)
+            selected_group_column = None
+            if metadata_columns:
+                selected_group_column = st.selectbox(
+                    "Metadata column for color/hover grouping (optional)",
+                    options=["None", *metadata_columns],
+                    index=0,
+                    key=f"analyze_raw_curve_group_column_{signal_slug}",
+                )
+                if selected_group_column == "None":
+                    selected_group_column = None
+            if selected_group_column and merged_df is not None:
+                group_lookup = (
+                    merged_df[["well", selected_group_column]]
+                    .drop_duplicates(subset=["well"], keep="first")
+                    .rename(columns={selected_group_column: "metadata_label"})
+                )
+                plot_df = plot_df.merge(group_lookup, on="well", how="left")
+                plot_df["metadata_label"] = plot_df["metadata_label"].fillna("—").astype(str)
+
+            import plotly.express as px
+
+            color_map = _metadata_color_value_map(plot_df, "metadata_label" if selected_group_column else None)
+            if selected_group_column:
+                color_column = "metadata_label"
+                labels = {
+                    "time": "Elapsed time (minutes)",
+                    "value": signal_name,
+                    "metadata_label": selected_group_column,
+                }
+            else:
+                color_column = "well_color"
+                plot_df[color_column] = "All wells"
+                labels = {"time": "Elapsed time (minutes)", "value": signal_name}
+            fig = px.line(
+                plot_df,
+                x="time",
+                y="value",
+                line_group="well",
+                color=color_column,
+                color_discrete_map=color_map if selected_group_column else {"All wells": "#4c78a8"},
+                labels=labels,
+                title=f"Raw {signal_name} curves",
+                custom_data=["well", "metadata_label"],
+            )
+            hover_tail = (
+                f"<br>{selected_group_column}: %{{customdata[1]}}<extra></extra>"
+                if selected_group_column
+                else "<extra></extra>"
+            )
+            fig.update_traces(
+                mode="lines",
+                opacity=0.55,
+                line={"width": 1.3},
+                hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
+            )
+            st.plotly_chart(fig, use_container_width=True, key=f"analyze_raw_curves_plot_{signal_slug}")
+
+            try:
+                feature_source = merged_df if merged_df is not None else filtered_tidy_df
+                features_df = _compute_selected_features(
+                    feature_source,
+                    selected_features=config.get("selected_features", []) if config else [],
+                    threshold=config.get("threshold") if config else None,
+                    signal_name=signal_name,
+                )
+            except Exception as exc:  # pragma: no cover - defensive streamlit display
+                st.error(f"Failed to extract features for {signal_name}: {exc}")
+                features_df = None
+
+            with st.expander("QC summary (compact)", expanded=False):
+                try:
+                    qc = qc_summary(filtered_tidy_df)
+                    missing_overall = qc["missing"]["overall"]
+                    missing_count = int(missing_overall["n_missing"].sum()) if "n_missing" in missing_overall.columns else 0
+                    constant_count = int(len(qc["constant_wells"]))
+                    outlier_count = int(len(qc["outlier_wells"]))
+                    st.write(
+                        f"Missing values: **{missing_count}** | "
+                        f"Constant wells: **{constant_count}** | "
+                        f"Outlier wells: **{outlier_count}**"
+                    )
+                    with st.expander("Optional QC details", expanded=False):
+                        st.dataframe(missing_overall, use_container_width=True)
+                        st.dataframe(qc["constant_wells"].head(12), use_container_width=True)
+                        st.dataframe(qc["outlier_wells"].head(12), use_container_width=True)
+                        st.dataframe(qc["edge_effects"], use_container_width=True)
+                except Exception as exc:  # pragma: no cover - defensive streamlit display
+                    st.error(f"Failed to compute QC summary for {signal_name}: {exc}")
+
+            st.markdown("#### Results and export")
+            filtered_display_df = _rename_value_column_for_signal(filtered_tidy_df.head(12), signal_name=signal_name)
+            st.dataframe(filtered_display_df, use_container_width=True)
+            if features_df is not None and features_df.shape[1] > 3:
+                st.dataframe(features_df.head(12), use_container_width=True)
+            tidy_export_df = _rename_value_column_for_signal(filtered_tidy_df, signal_name=signal_name)
+            st.download_button(
+                label="Download tidy (CSV)",
+                data=tidy_export_df.to_csv(index=False),
+                file_name=f"rosettier_tidy_{signal_slug}.csv",
+                mime="text/csv",
+                key=f"download_tidy_csv_{signal_slug}",
+                on_click="ignore",
+            )
+            if merged_df is not None:
+                merged_export_df = _rename_value_column_for_signal(merged_df, signal_name=signal_name)
+                st.download_button(
+                    label="Download merged data (CSV)",
+                    data=merged_export_df.to_csv(index=False),
+                    file_name=f"rosettier_merged_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_merged_csv_{signal_slug}",
+                    on_click="ignore",
+                )
+            if features_df is not None and features_df.shape[1] > 3:
+                st.download_button(
+                    label="Download features (CSV)",
+                    data=features_df.to_csv(index=False),
+                    file_name=f"rosettier_features_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_features_csv_{signal_slug}",
+                    on_click="ignore",
+                )
+            if qc is not None:
+                st.download_button(
+                    label="Download QC missing overall (CSV)",
+                    data=qc["missing"]["overall"].to_csv(index=False),
+                    file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_qc_missing_overall_csv_{signal_slug}",
+                    on_click="ignore",
+                )
+                st.download_button(
+                    label="Download QC constant wells (CSV)",
+                    data=qc["constant_wells"].to_csv(index=False),
+                    file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_qc_constant_wells_csv_{signal_slug}",
+                    on_click="ignore",
+                )
+                st.download_button(
+                    label="Download QC outlier wells (CSV)",
+                    data=qc["outlier_wells"].to_csv(index=False),
+                    file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_qc_outlier_wells_csv_{signal_slug}",
+                    on_click="ignore",
+                )
 
 
 def main() -> None:

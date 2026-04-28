@@ -166,3 +166,45 @@ def test_prepare_raw_curve_plot_df_defaults_empty_group_when_not_selected():
 
     assert list(out["well"]) == ["A01", "A02"]
     assert set(out["metadata_group"]) == {""}
+
+
+def test_rename_value_column_for_signal_uses_signal_name_without_mutating_input():
+    tidy = pd.DataFrame({"well": ["A01"], "time": [0.0], "value": [0.1]})
+    out = app._rename_value_column_for_signal(tidy, signal_name="GFP")
+
+    assert "GFP" in out.columns
+    assert "value" not in out.columns
+    assert "value" in tidy.columns
+
+
+def test_metadata_color_value_map_assigns_deterministic_colors():
+    plot_df = pd.DataFrame({"metadata_label": ["drug", "control", "drug"]})
+
+    color_map = app._metadata_color_value_map(plot_df, metadata_column="metadata_label")
+
+    assert set(color_map) == {"control", "drug"}
+    assert color_map["control"] != color_map["drug"]
+
+
+def test_filter_selected_wells_keeps_all_when_selection_is_empty():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "time": [0.0, 0.0, 0.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._filter_selected_wells(tidy, selected_wells=[])
+    assert sorted(out["well"].unique().tolist()) == ["A01", "A02", "A03"]
+
+
+def test_filter_selected_wells_applies_plate_selection():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "time": [0.0, 0.0, 0.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._filter_selected_wells(tidy, selected_wells=["A02"])
+    assert out["well"].tolist() == ["A02"]
