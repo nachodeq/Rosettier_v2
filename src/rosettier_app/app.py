@@ -600,14 +600,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     session_rosetta_available = "rosetta_df" in st.session_state
 
-    st.subheader("1. Upload measurements")
-    measurement_file = st.file_uploader(
-        "Measurements file (CSV/TSV; wide format: rows=timepoints, columns=wells)",
-        type=["csv", "tsv"],
-        key="measurements_upload",
-    )
-
-    st.subheader("2. Rosetta source")
+    st.subheader("1. Rosetta source")
     rosetta_source = st.radio(
         "Choose Rosetta source",
         options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV"],
@@ -635,7 +628,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
         )
     )
 
-    st.subheader("3. Signal inputs")
+    st.subheader("2. Inputs")
     signal_entries: list[dict[str, object]] = []
     for idx in range(signal_count):
         with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
@@ -674,7 +667,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 }
             )
 
-    st.subheader("4. Analysis setup")
+    st.subheader("3. Analysis setup")
     enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
     min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
@@ -743,7 +736,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     config = results.get("config")
 
-    st.subheader("5. Validate, parse, visualize, and export")
+    st.subheader("4. Validate, parse, visualize, and export")
     if "signals" not in results:
         st.info("Configure analysis setup and click 'Run analysis'.")
         return
