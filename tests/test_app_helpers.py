@@ -346,6 +346,8 @@ def test_build_static_comparison_plot_bytes_returns_png_and_svg_bytes():
         feature_column="feature_auc",
         title="Test Plot",
         color_column="color_label",
+        facet_column=None,
+        x_axis_label="strain",
         format="png",
     )
     svg_bytes = app._build_static_comparison_plot_bytes(
@@ -354,8 +356,52 @@ def test_build_static_comparison_plot_bytes_returns_png_and_svg_bytes():
         feature_column="feature_auc",
         title="Test Plot",
         color_column="color_label",
+        facet_column=None,
+        x_axis_label="strain",
         format="svg",
     )
 
     assert len(png_bytes) > 100
     assert svg_bytes.startswith(b"<?xml") or svg_bytes.lstrip().startswith(b"<svg")
+
+
+def test_build_static_comparison_plot_bytes_preserves_facets_and_axis_label():
+    pytest.importorskip("matplotlib")
+
+    comparison = pd.DataFrame(
+        {
+            "__compare_group_label__": ["g1", "g2", "g1", "g2"],
+            "feature_auc": [1.0, 2.0, 3.0, 4.0],
+            "batch": ["b1", "b1", "b2", "b2"],
+        }
+    )
+    svg_bytes = app._build_static_comparison_plot_bytes(
+        comparison_df=comparison,
+        group_label_column="__compare_group_label__",
+        feature_column="feature_auc",
+        title="Test Plot",
+        color_column=None,
+        facet_column="batch",
+        x_axis_label="strain | drug",
+        format="svg",
+    )
+
+    svg_text = svg_bytes.decode("utf-8", errors="ignore")
+    assert "batch=b1" in svg_text
+    assert "batch=b2" in svg_text
+    assert "strain | drug" in svg_text
+
+
+def test_comparison_signal_options_disambiguate_duplicate_signal_names():
+    options, option_map = app._comparison_signal_options(
+        [
+            {"signal_name": "OD", "signal_slug": "od_a"},
+            {"signal_name": "OD", "signal_slug": "od_b"},
+            {"signal_name": "GFP", "signal_slug": "gfp_a"},
+        ]
+    )
+
+    assert len(options) == 3
+    assert option_map[options[0]]["label"] == "OD"
+    assert option_map[options[1]]["label"] == "OD (2)"
+    assert option_map[options[2]]["label"] == "GFP"
