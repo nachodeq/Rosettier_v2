@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from rosettier.plates import PlateSpec
 from rosettier_app import app
@@ -326,3 +327,35 @@ def test_build_group_label_column_supports_multiple_group_columns():
 def test_comparison_plot_mode_uses_points_for_small_samples():
     comparison = pd.DataFrame({"well": ["A01", "A02"]})
     assert app._comparison_plot_mode(comparison) == "points"
+
+
+def test_build_static_comparison_plot_bytes_returns_png_and_svg_bytes():
+    pytest.importorskip("matplotlib")
+
+    comparison = pd.DataFrame(
+        {
+            "__compare_group_label__": ["g1", "g1", "g2", "g2"],
+            "feature_auc": [1.0, 2.0, 3.0, 4.0],
+            "color_label": ["A", "B", "A", "B"],
+        }
+    )
+
+    png_bytes = app._build_static_comparison_plot_bytes(
+        comparison_df=comparison,
+        group_label_column="__compare_group_label__",
+        feature_column="feature_auc",
+        title="Test Plot",
+        color_column="color_label",
+        format="png",
+    )
+    svg_bytes = app._build_static_comparison_plot_bytes(
+        comparison_df=comparison,
+        group_label_column="__compare_group_label__",
+        feature_column="feature_auc",
+        title="Test Plot",
+        color_column="color_label",
+        format="svg",
+    )
+
+    assert len(png_bytes) > 100
+    assert svg_bytes.startswith(b"<?xml") or svg_bytes.lstrip().startswith(b"<svg")
