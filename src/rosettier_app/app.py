@@ -730,6 +730,11 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
     if image_format not in {"png", "svg"}:
         raise ValueError(f"Unsupported image format: {image_format}")
 
+    if not hasattr(fig, "data"):
+        if hasattr(fig, "to_image"):
+            return fig.to_image(format=image_format)
+        raise RuntimeError("Plot export requires a Plotly figure or compatible to_image backend.")
+
     try:
         import matplotlib.pyplot as plt
     except ModuleNotFoundError:
