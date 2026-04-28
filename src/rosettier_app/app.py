@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from io import BytesIO, StringIO
 import json
-import os
-import shutil
 import zipfile
 from collections import Counter
 
@@ -675,55 +673,8 @@ def _plotly_html_bytes(fig) -> bytes:
     return fig.to_html(full_html=True, include_plotlyjs=True).encode("utf-8")
 
 
-def _plotly_static_export_status() -> tuple[bool, str | None]:
-    """Return whether Plotly static export backend is available for PNG/SVG."""
-    try:
-        import kaleido  # noqa: F401
-    except ModuleNotFoundError:
-        return False, "PNG/SVG export requires the 'kaleido' package in the app dependencies."
-
-    chrome_candidates = [
-        "google-chrome",
-        "google-chrome-stable",
-        "chrome",
-        "chromium",
-        "chromium-browser",
-        "msedge",
-    ]
-    if any(shutil.which(candidate) for candidate in chrome_candidates):
-        return True, None
-
-    platform_paths = [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    ]
-    if any(os.path.exists(path) for path in platform_paths):
-        return True, None
-
-    return False, (
-        "PNG/SVG export requires a local Chrome installation that Kaleido can find. "
-        "Install Chrome once, then restart the app."
-    )
-
-
-def _try_plotly_static_export_bytes(fig, *, format: str) -> tuple[bytes | None, str | None]:
-    """Attempt Plotly static export with Kaleido and return bytes or friendly warning."""
-    try:
-        return fig.to_image(format=format, engine="kaleido"), None
-    except ModuleNotFoundError:
-        return None, f"{format.upper()} export is unavailable because optional package 'kaleido' is not installed."
-    except Exception as exc:  # pragma: no cover - depends on kaleido/chrome runtime state
-        message = str(exc).lower()
-        if "kaleido requires google chrome" in message or ("kaleido" in message and "chrome" in message):
-            return None, "PNG/SVG export requires Kaleido with Chrome installed. HTML export is available."
-        return None, f"{format.upper()} export unavailable in this environment."
-
-
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
-    """Render HTML/PNG/SVG download buttons for a Plotly figure."""
+    """Render HTML download button for a Plotly figure."""
     st.download_button(
         label="Download plot (HTML)",
         data=_plotly_html_bytes(fig),
@@ -732,32 +683,6 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
         key=f"{key_prefix}_html",
         on_click="ignore",
     )
-
-    png_bytes, png_warning = _try_plotly_static_export_bytes(fig, format="png")
-    if png_bytes is None:
-        st.info(png_warning or "PNG export unavailable in this environment.")
-    else:
-        st.download_button(
-            label="Download plot (PNG)",
-            data=png_bytes,
-            file_name=f"{filename_stem}.png",
-            mime="image/png",
-            key=f"{key_prefix}_png",
-            on_click="ignore",
-        )
-
-    svg_bytes, svg_warning = _try_plotly_static_export_bytes(fig, format="svg")
-    if svg_bytes is None:
-        st.info(svg_warning or "SVG export unavailable in this environment.")
-    else:
-        st.download_button(
-            label="Download plot (SVG)",
-            data=svg_bytes,
-            file_name=f"{filename_stem}.svg",
-            mime="image/svg+xml",
-            key=f"{key_prefix}_svg",
-            on_click="ignore",
-        )
 
 
 def _comparison_signal_options(available_comparison: list[dict[str, object]]) -> tuple[list[str], dict[str, dict[str, object]]]:
@@ -1143,12 +1068,6 @@ def _render_analyze_data(st, plate_size: int) -> None:
     threshold: float | None = None
     if "time_to_threshold" in selected_features:
         threshold = float(st.number_input("Threshold (for time to threshold)", value=0.5, step=0.1, key="analyze_threshold"))
-
-    static_export_ready, static_export_message = _plotly_static_export_status()
-    if static_export_ready:
-        st.caption("Plot export backend detected: HTML, PNG, and SVG downloads are available.")
-    elif static_export_message:
-        st.info(f"{static_export_message} You can still export HTML plots offline.")
 
     run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
     if run_analysis:
