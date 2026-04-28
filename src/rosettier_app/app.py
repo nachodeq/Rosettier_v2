@@ -191,8 +191,14 @@ def _selected_wells_from_event(event: dict | None, rosetta_df: pd.DataFrame) -> 
 
 
 def _event_contains_selection_payload(event: dict | None) -> bool:
-    """Return whether event includes a selection payload (including empty selection)."""
-    return bool(event and ("selection" in event))
+    """Return whether event includes a non-empty selection payload."""
+    if not event:
+        return False
+    selection = event.get("selection")
+    if not selection:
+        return False
+    points = selection.get("points") or []
+    return len(points) > 0
 
 
 def _init_rosetta_state(st, plate_size: int) -> None:
@@ -502,25 +508,24 @@ def _prepare_raw_curve_plot_df(
 ) -> pd.DataFrame:
     """Build plot-ready dataframe for raw per-well time-series curves."""
     plot_df = tidy_df.loc[tidy_df["well"].isin(wells_to_plot), ["well", "time", "value"]].copy()
-    plot_df["metadata_label"] = "All wells"
 
     if merged_df is None or not group_column:
+        plot_df["metadata_label"] = "All wells"
         return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
 
     if group_column not in merged_df.columns:
+        plot_df["metadata_label"] = "All wells"
         return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
 
     group_lookup = (
         merged_df[["well", group_column]]
         .dropna(subset=["well"])
         .drop_duplicates(subset=["well"], keep="first")
-        .rename(columns={group_column: "metadata_label"})
+        .rename(columns={group_column: "group_metadata_label"})
     )
-    plot_df = plot_df.merge(group_lookup, on="well", how="left", suffixes=("", "_from_merge"))
-    if "metadata_label_from_merge" in plot_df.columns:
-        plot_df["metadata_label"] = plot_df["metadata_label_from_merge"]
-        plot_df = plot_df.drop(columns=["metadata_label_from_merge"])
-    plot_df["metadata_label"] = plot_df["metadata_label"].fillna("—").astype(str)
+    plot_df = plot_df.merge(group_lookup, on="well", how="left")
+    plot_df["metadata_label"] = plot_df["group_metadata_label"].fillna("—").astype(str)
+    plot_df = plot_df.drop(columns=["group_metadata_label"])
     return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
 
 
@@ -705,6 +710,18 @@ def _render_analyze_data(st, plate_size: int) -> None:
     run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
     if run_analysis:
         valid_signals = [entry for entry in signal_entries if entry["uploaded_file"] is not None]
+        legacy_uploaded_file = st.session_state.get("analyze_measurements_upload")
+        if not valid_signals and legacy_uploaded_file is not None:
+            valid_signals = [
+                {
+                    "index": 0,
+                    "uploaded_file": legacy_uploaded_file,
+                    "signal_name": st.session_state.get("analyze_signal_name_0", "Signal_1"),
+                    "delimiter": st.session_state.get("analyze_delimiter_0", "auto"),
+                    "decimal": st.session_state.get("analyze_decimal_0", "auto"),
+                    "time_column": st.session_state.get("analyze_time_column_0", "Time"),
+                }
+            ]
         if not valid_signals:
             st.info("Upload at least one measurements file to run analysis.")
         elif enable_time_filter and min_time > max_time:
@@ -775,8 +792,10 @@ def _render_analyze_data(st, plate_size: int) -> None:
             merged_df: pd.DataFrame | None = None
             features_df: pd.DataFrame | None = None
             qc: dict | None = None
+            signal_index = int(payload.get("index", 0))
             signal_name = str(payload["signal_name"]).strip() or "OD"
             signal_slug = signal_name.replace(" ", "_")
+            signal_key_slug = f"{signal_index}_{signal_slug}"
             st.markdown(f"### Signal: `{signal_name}`")
 
             st.caption("Parsed preview")
@@ -836,7 +855,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
             st.markdown("#### Raw curves")
             available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
-            selected_wells_key = f"analyze_selected_wells_{signal_slug}"
+            selected_wells_key = f"analyze_selected_wells_{signal_key_slug}"
             if selected_wells_key not in st.session_state:
                 st.session_state[selected_wells_key] = []
             existing_selected_wells = [
@@ -844,7 +863,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             ]
             if existing_selected_wells != st.session_state[selected_wells_key]:
                 st.session_state[selected_wells_key] = existing_selected_wells
-            multiselect_key = f"analyze_well_selector_{signal_slug}"
+            multiselect_key = f"analyze_well_selector_{signal_key_slug}"
             selected_wells = st.multiselect(
                 "Wells to plot (optional; leave empty for all wells)",
                 options=available_wells,
@@ -853,9 +872,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 help="Search and select wells. Empty selection plots all wells.",
             )
             st.session_state[selected_wells_key] = selected_wells
-            if st.button("Clear plate selection", key=f"analyze_clear_plate_selection_{signal_slug}"):
+            if st.button("Clear plate selection", key=f"analyze_clear_plate_selection_{signal_key_slug}"):
                 st.session_state[selected_wells_key] = []
-                st.session_state[multiselect_key] = []
                 st.rerun()
             st.caption(
                 "No wells selected plots all wells. "
@@ -870,7 +888,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     "Metadata column for color/hover grouping (optional)",
                     options=["None", *metadata_columns],
                     index=0,
-                    key=f"analyze_raw_curve_group_column_{signal_slug}",
+                    key=f"analyze_raw_curve_group_column_{signal_key_slug}",
                 )
                 if selected_group_column == "None":
                     selected_group_column = None
@@ -920,7 +938,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 line={"width": 1.3},
                 hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
             )
-            st.plotly_chart(fig, use_container_width=True, key=f"analyze_raw_curves_plot_{signal_slug}")
+            st.plotly_chart(fig, use_container_width=True, key=f"analyze_raw_curves_plot_{signal_key_slug}")
 
             try:
                 feature_source = merged_df if merged_df is not None else filtered_tidy_df
@@ -967,7 +985,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 data=tidy_export_df.to_csv(index=False),
                 file_name=f"rosettier_tidy_{signal_slug}.csv",
                 mime="text/csv",
-                key=f"download_tidy_csv_{signal_slug}",
+                key=f"download_tidy_csv_{signal_key_slug}",
                 on_click="ignore",
             )
             if merged_df is not None:
@@ -977,7 +995,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     data=merged_export_df.to_csv(index=False),
                     file_name=f"rosettier_merged_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_merged_csv_{signal_slug}",
+                    key=f"download_merged_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
             if features_df is not None and features_df.shape[1] > 3:
@@ -986,7 +1004,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     data=features_df.to_csv(index=False),
                     file_name=f"rosettier_features_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_features_csv_{signal_slug}",
+                    key=f"download_features_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
             if qc is not None:
@@ -995,7 +1013,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     data=qc["missing"]["overall"].to_csv(index=False),
                     file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_qc_missing_overall_csv_{signal_slug}",
+                    key=f"download_qc_missing_overall_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
                 st.download_button(
@@ -1003,7 +1021,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     data=qc["constant_wells"].to_csv(index=False),
                     file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_qc_constant_wells_csv_{signal_slug}",
+                    key=f"download_qc_constant_wells_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
                 st.download_button(
@@ -1011,7 +1029,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     data=qc["outlier_wells"].to_csv(index=False),
                     file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_qc_outlier_wells_csv_{signal_slug}",
+                    key=f"download_qc_outlier_wells_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
 

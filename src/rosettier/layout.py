@@ -51,10 +51,27 @@ def merge_measurements_with_layout(
     if measurement_wells != layout_wells:
         raise PlateSizeMismatchError("Layout wells must exactly match measurement wells")
 
+    layout_to_merge = normalized_layout.copy()
+    overlapping_columns = (
+        set(measurements_long.columns).intersection(layout_to_merge.columns) - {layout_well_col}
+    )
+    rename_map: dict[str, str] = {}
+    reserved_names = set(measurements_long.columns).union(layout_to_merge.columns)
+
+    for column in sorted(overlapping_columns):
+        candidate = f"{column}_layout"
+        suffix_index = 1
+        while candidate in reserved_names or candidate in rename_map.values():
+            candidate = f"{column}_layout_{suffix_index}"
+            suffix_index += 1
+        rename_map[column] = candidate
+
+    if rename_map:
+        layout_to_merge = layout_to_merge.rename(columns=rename_map)
+
     return measurements_long.merge(
-        normalized_layout,
+        layout_to_merge,
         left_on=measurement_well_col,
         right_on=layout_well_col,
         how="left",
-        suffixes=("", "_layout"),
     )
