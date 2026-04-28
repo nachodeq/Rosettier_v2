@@ -103,3 +103,30 @@ def test_compute_selected_features_requires_threshold_for_time_to_threshold():
         assert "Threshold must be provided" in str(exc)
     else:  # pragma: no cover - explicit failure branch
         raise AssertionError("Expected ValueError when threshold is missing.")
+
+
+def test_make_plate_figure_96_is_compact_and_shows_labels_and_variable_hover():
+    spec = PlateSpec.from_size(96)
+    df = app._build_rosetta_table(spec)
+    df["strain"] = ""
+    df.loc[df["well"] == "A01", "strain"] = "WT"
+
+    fig = app._make_plate_figure(df, spec, selected_wells=["A01"], color_variable="strain")
+    trace = fig.data[0]
+
+    assert trace.mode == "markers+text"
+    assert trace.text is not None
+    assert "strain: WT" in trace.hovertext[0]
+    assert fig.layout.height == 560
+
+
+def test_make_plate_figure_384_hides_well_labels_to_avoid_overcrowding():
+    spec = PlateSpec.from_size(384)
+    df = app._build_rosetta_table(spec)
+
+    fig = app._make_plate_figure(df, spec, selected_wells=[], color_variable=None)
+    trace = fig.data[0]
+
+    assert trace.mode == "markers"
+    assert trace.text is None
+    assert "Well: A01" in trace.hovertext[0]

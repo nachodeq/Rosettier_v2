@@ -102,12 +102,18 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         color_series = rosetta_df[color_variable].fillna("").astype(str)
         has_value = color_series.str.len() > 0
         colors = ["#4c78a8" if hv else "#d9d9d9" for hv in has_value]
+        hover_text = [
+            f"Well: {well}<br>{color_variable}: {value if value != '' else '—'}"
+            for well, value in zip(plot_df["well"], color_series, strict=False)
+        ]
     else:
         colors = ["#d9d9d9"] * len(plot_df)
+        hover_text = [f"Well: {well}" for well in plot_df["well"]]
 
-    marker_sizes = [16 if spec.size == 384 else 28] * len(plot_df)
-    line_colors = ["#ff7f0e" if sel else "#b3b3b3" for sel in is_selected]
-    line_widths = [2.3 if sel else 0.8 for sel in is_selected]
+    marker_size = 15 if spec.size == 384 else 40
+    text_size = 7 if spec.size == 384 else 10
+    line_colors = ["#ff7f0e" if sel else "#111111" for sel in is_selected]
+    line_widths = [2.2 if sel else (0.5 if spec.size == 384 else 0.8) for sel in is_selected]
 
     fig = go.Figure(
         data=[
@@ -117,14 +123,16 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
                 mode="markers+text" if spec.size == 96 else "markers",
                 text=plot_df["well"] if spec.size == 96 else None,
                 textposition="middle center",
-                textfont={"size": 9, "color": "#222222"},
+                textfont={"size": text_size, "color": "#111111"},
                 customdata=plot_df[["well"]],
                 marker={
-                    "size": marker_sizes,
+                    "size": marker_size,
                     "color": colors,
+                    "opacity": 0.95,
                     "line": {"color": line_colors, "width": line_widths},
                 },
-                hovertemplate="Well: %{customdata[0]}<extra></extra>",
+                hovertext=hover_text,
+                hovertemplate="%{hovertext}<extra></extra>",
             )
         ]
     )
@@ -132,7 +140,9 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
     fig.update_xaxes(
         range=[0.5, len(spec.columns) + 0.5],
         dtick=1,
-        title="column",
+        title="Column",
+        tickfont={"size": 11},
+        title_font={"size": 12},
         showgrid=False,
         zeroline=False,
     )
@@ -142,17 +152,19 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         tickmode="array",
         tickvals=list(range(len(spec.rows), 0, -1)),
         ticktext=list(spec.rows),
-        title="row",
+        title="Row",
+        tickfont={"size": 11},
+        title_font={"size": 12},
         showgrid=False,
         zeroline=False,
     )
     fig.update_layout(
-        height=650 if spec.size == 96 else 820,
+        height=560 if spec.size == 96 else 700,
         clickmode="event+select",
         dragmode="select",
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin={"l": 24, "r": 24, "t": 24, "b": 24},
+        margin={"l": 8, "r": 8, "t": 8, "b": 8},
     )
     return fig
 
