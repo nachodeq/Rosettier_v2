@@ -554,55 +554,120 @@ def _build_static_comparison_plot_bytes(
     feature_column: str,
     title: str,
     color_column: str | None,
+    facet_column: str | None,
+    x_axis_label: str,
     format: str,
 ) -> bytes:
     """Build an offline static comparison plot (PNG/SVG) without Plotly image backends."""
     import matplotlib.pyplot as plt
     import numpy as np
 
-    plot_df = comparison_df[[group_label_column, feature_column]].copy()
+    plot_columns = [group_label_column, feature_column]
+    if color_column and color_column in comparison_df.columns:
+        plot_columns.append(color_column)
+    if facet_column and facet_column in comparison_df.columns:
+        plot_columns.append(facet_column)
+    plot_df = comparison_df[plot_columns].copy()
     if color_column and color_column in comparison_df.columns:
         plot_df[color_column] = comparison_df[color_column].astype(str)
+    if facet_column and facet_column in comparison_df.columns:
+        plot_df[facet_column] = plot_df[facet_column].fillna("—").astype(str)
     plot_df[feature_column] = pd.to_numeric(plot_df[feature_column], errors="coerce")
     plot_df = plot_df.dropna(subset=[group_label_column, feature_column])
     if plot_df.empty:
         raise ValueError("No finite values available to export static plot.")
 
-    group_order = plot_df[group_label_column].astype(str).drop_duplicates().tolist()
-    group_to_position = {group: idx + 1 for idx, group in enumerate(group_order)}
+    facet_values = ["All data"]
+    if facet_column and facet_column in plot_df.columns:
+        facet_values = plot_df[facet_column].drop_duplicates().tolist()
 
-    grouped_values = [plot_df.loc[plot_df[group_label_column].astype(str) == group, feature_column].tolist() for group in group_order]
-
-    fig, ax = plt.subplots(figsize=(max(10, len(group_order) * 0.5), 6))
-    ax.boxplot(grouped_values, positions=list(range(1, len(group_order) + 1)), widths=0.6, patch_artist=True)
+    fig, axes = plt.subplots(
+        1,
+        len(facet_values),
+        figsize=(max(10, len(facet_values) * 5.5), 6),
+        sharey=True,
+        squeeze=False,
+    )
+    axes_flat = axes[0]
 
     rng = np.random.default_rng(7)
-    if color_column and color_column in plot_df.columns:
-        color_values = plot_df[color_column].dropna().astype(str).drop_duplicates().tolist()
-        cmap = plt.get_cmap("tab20")
-        color_map = {value: cmap(idx % 20) for idx, value in enumerate(color_values)}
-        for color_value, chunk in plot_df.groupby(color_column, dropna=False):
-            x_base = chunk[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
-            x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(chunk))
-            ax.scatter(x_jitter, chunk[feature_column], s=28, alpha=0.8, color=color_map.get(str(color_value), "#4c78a8"), label=str(color_value))
-        if color_values:
-            ax.legend(title=color_column, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0, fontsize=8)
-    else:
-        x_base = plot_df[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
-        x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(plot_df))
-        ax.scatter(x_jitter, plot_df[feature_column], s=28, alpha=0.8, color="#4c78a8")
+    for facet_idx, facet_value in enumerate(facet_values):
+        ax = axes_flat[facet_idx]
+        facet_df = plot_df if facet_value == "All data" else plot_df.loc[plot_df[facet_column] == facet_value]
+        if facet_df.empty:
+            continue
 
-    ax.set_xticks(range(1, len(group_order) + 1))
-    ax.set_xticklabels(group_order, rotation=35, ha="right")
-    ax.set_xlabel(group_label_column)
-    ax.set_ylabel(feature_column)
-    ax.set_title(title)
+        group_order = facet_df[group_label_column].astype(str).drop_duplicates().tolist()
+        group_to_position = {group: idx + 1 for idx, group in enumerate(group_order)}
+        grouped_values = [facet_df.loc[facet_df[group_label_column].astype(str) == group, feature_column].tolist() for group in group_order]
+        ax.boxplot(grouped_values, positions=list(range(1, len(group_order) + 1)), widths=0.6, patch_artist=True)
+
+        if color_column and color_column in facet_df.columns:
+            color_values = facet_df[color_column].dropna().astype(str).drop_duplicates().tolist()
+            cmap = plt.get_cmap("tab20")
+            color_map = {value: cmap(idx % 20) for idx, value in enumerate(color_values)}
+            for color_value, chunk in facet_df.groupby(color_column, dropna=False):
+                x_base = chunk[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
+                x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(chunk))
+                ax.scatter(
+                    x_jitter,
+                    chunk[feature_column],
+                    s=28,
+                    alpha=0.8,
+                    color=color_map.get(str(color_value), "#4c78a8"),
+                    label=str(color_value),
+                )
+            if color_values:
+                ax.legend(
+                    title=color_column,
+                    loc="upper left",
+                    bbox_to_anchor=(1.01, 1.0),
+                    borderaxespad=0.0,
+                    fontsize=8,
+                )
+        else:
+            x_base = facet_df[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
+            x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(facet_df))
+            ax.scatter(x_jitter, facet_df[feature_column], s=28, alpha=0.8, color="#4c78a8")
+
+        ax.set_xticks(range(1, len(group_order) + 1))
+        ax.set_xticklabels(group_order, rotation=35, ha="right")
+        ax.set_xlabel(x_axis_label)
+        ax.set_ylabel(feature_column)
+        if facet_value != "All data":
+            ax.set_title(f"{facet_column}={facet_value}")
+    fig.suptitle(title)
     fig.tight_layout()
 
     output = BytesIO()
     fig.savefig(output, format=format, dpi=180)
     plt.close(fig)
     return output.getvalue()
+
+
+def _friendly_missing_dependency_warning(st, *, package_name: str, purpose: str) -> None:
+    """Show a clear, non-fatal warning for optional export dependencies."""
+    st.warning(
+        f"{purpose} is unavailable because optional package '{package_name}' is not installed. "
+        "Install app extras with: python -m pip install -e \".[app]\""
+    )
+
+
+def _comparison_signal_options(available_comparison: list[dict[str, object]]) -> tuple[list[str], dict[str, dict[str, object]]]:
+    """Build unique signal option ids for comparison UI while preserving display names."""
+    options: list[str] = []
+    option_map: dict[str, dict[str, object]] = {}
+    name_counts: dict[str, int] = {}
+    for idx, signal_result in enumerate(available_comparison):
+        signal_name = str(signal_result["signal_name"])
+        signal_slug = str(signal_result["signal_slug"])
+        name_counts[signal_name] = name_counts.get(signal_name, 0) + 1
+        occurrence = name_counts[signal_name]
+        label = signal_name if occurrence == 1 else f"{signal_name} ({occurrence})"
+        option_id = f"{idx}::{signal_slug}"
+        options.append(option_id)
+        option_map[option_id] = {"label": label, "signal": signal_result}
+    return options, option_map
 
 
 def _combine_qc_outputs_for_export(qc: dict) -> pd.DataFrame:
@@ -1197,16 +1262,16 @@ def _render_analyze_data(st, plate_size: int) -> None:
         st.info("No extracted feature tables are available yet for comparison plotting.")
         return
 
-    comparison_signal_names = [str(signal_result["signal_name"]) for signal_result in available_comparison]
-    selected_signal_name = st.selectbox(
+    comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
+    selected_signal_option = st.selectbox(
         "Signal",
-        options=comparison_signal_names,
+        options=comparison_signal_options,
+        format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
         index=0,
         key="compare_features_signal",
     )
-    selected_signal = next(
-        signal_result for signal_result in available_comparison if str(signal_result["signal_name"]) == selected_signal_name
-    )
+    selected_signal = comparison_signal_map[selected_signal_option]["signal"]
+    selected_signal_name = str(selected_signal["signal_name"])
     selected_signal_slug = str(selected_signal["signal_slug"])
     selected_features_df = selected_signal["features_df"]
     selected_merged_df = selected_signal["merged_df"]
@@ -1310,31 +1375,35 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 f"by {' + '.join(selected_group_columns)}"
             ),
         )
-        fig.update_traces(marker={"size": 7, "opacity": 0.75})
-
-        if selected_color_column:
-            strip_fig = px.strip(
-                comparison_df,
-                x=group_label_column,
-                y=selected_feature_column,
-                color=selected_color_column,
-                facet_col=selected_facet_column,
-                hover_name="well",
-                hover_data=hover_data,
-            )
-            strip_fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
-            for trace in strip_fig.data:
-                fig.add_trace(trace)
-            fig.update_layout(boxmode="group")
-        else:
-            fig.update_traces(jitter=0.35, pointpos=0.0)
-            fig.update_layout(boxmode="group")
+        fig.update_traces(
+            selector={"type": "box"},
+            marker={"size": 6, "opacity": 0.6, "color": "#4c78a8"},
+            line={"width": 1.1, "color": "#333333"},
+            fillcolor="rgba(140, 140, 140, 0.15)",
+            pointpos=0.0,
+            jitter=0.0,
+        )
+        strip_fig = px.strip(
+            comparison_df,
+            x=group_label_column,
+            y=selected_feature_column,
+            facet_col=selected_facet_column,
+            hover_name="well",
+            hover_data=hover_data,
+        )
+        strip_fig.update_traces(
+            jitter=0.28,
+            marker={"size": 7, "opacity": 0.78, "color": "#4c78a8", "line": {"width": 0}},
+            showlegend=False,
+        )
+        for trace in strip_fig.data:
+            fig.add_trace(trace)
+        fig.update_layout(boxmode="group")
     else:
         fig = px.strip(
             comparison_df,
             x=group_label_column,
             y=selected_feature_column,
-            color=selected_color_column,
             facet_col=selected_facet_column,
             hover_name="well",
             hover_data=hover_data,
@@ -1347,7 +1416,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 f"points by {' + '.join(selected_group_columns)} (<3 wells)"
             ),
         )
-        fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
+        fig.update_traces(jitter=0.28, marker={"size": 7, "opacity": 0.78, "color": "#4c78a8"})
     st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
 
     html_bytes = fig.to_html(include_plotlyjs=True, full_html=True).encode("utf-8")
@@ -1380,35 +1449,40 @@ def _render_analyze_data(st, plate_size: int) -> None:
     image_col1, image_col2 = st.columns(2)
     with image_col1:
         try:
-            png_bytes = _build_static_comparison_plot_bytes(
-                comparison_df=comparison_df,
-                group_label_column=group_label_column,
-                feature_column=selected_feature_column,
-                title=fig.layout.title.text or "Comparison plot",
-                color_column=selected_color_column,
-                format="png",
-            )
+            import kaleido  # noqa: F401
+
+            png_bytes = fig.to_image(format="png", engine="kaleido")
             st.download_button(
-                label="Download plot (PNG, offline)",
+                label="Download plot (PNG)",
                 data=png_bytes,
                 file_name=(
                     f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
                     f"by_{'_'.join(selected_group_columns)}.png"
                 ),
                 mime="image/png",
-                key=f"download_compare_plot_png_offline_{selected_signal_slug}",
+                key=f"download_compare_plot_png_kaleido_{selected_signal_slug}",
                 on_click="ignore",
             )
-        except Exception as exc:  # pragma: no cover - depends on optional matplotlib backend
-            st.warning(f"Offline PNG export unavailable in this environment: {exc}")
+        except ModuleNotFoundError:
+            _friendly_missing_dependency_warning(
+                st,
+                package_name="kaleido",
+                purpose="PNG export",
+            )
+        except Exception as exc:  # pragma: no cover - environment specific backend issues
+            st.warning(f"PNG export unavailable in this environment: {exc}")
     with image_col2:
         try:
+            import matplotlib  # noqa: F401
+
             svg_bytes = _build_static_comparison_plot_bytes(
                 comparison_df=comparison_df,
                 group_label_column=group_label_column,
                 feature_column=selected_feature_column,
                 title=fig.layout.title.text or "Comparison plot",
                 color_column=selected_color_column,
+                facet_column=selected_facet_column,
+                x_axis_label=" | ".join(selected_group_columns),
                 format="svg",
             )
             st.download_button(
@@ -1421,6 +1495,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 mime="image/svg+xml",
                 key=f"download_compare_plot_svg_offline_{selected_signal_slug}",
                 on_click="ignore",
+            )
+        except ModuleNotFoundError:
+            _friendly_missing_dependency_warning(
+                st,
+                package_name="matplotlib",
+                purpose="SVG export",
             )
         except Exception as exc:  # pragma: no cover - depends on optional matplotlib backend
             st.warning(f"Offline SVG export unavailable in this environment: {exc}")
