@@ -6,7 +6,7 @@ from io import StringIO
 
 import pandas as pd
 
-from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_time_to_threshold
+from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_max_value, extract_time_to_threshold
 from rosettier.io import parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec, validate_complete_well_set
@@ -470,6 +470,7 @@ _FEATURE_LABELS = {
     "endpoint": "Endpoint",
     "auc": "AUC",
     "max_slope": "Max slope",
+    "max_value": "Max value",
     "time_to_threshold": "Time to threshold",
 }
 
@@ -838,6 +839,8 @@ def _compute_selected_features(
             frames.append(extract_auc(feature_source)[["well", "auc"]])
         elif feature == "max_slope":
             frames.append(extract_max_slope(feature_source)[["well", "max_slope"]])
+        elif feature == "max_value":
+            frames.append(extract_max_value(feature_source)[["well", "max_value"]])
         elif feature == "time_to_threshold":
             if threshold is None:
                 raise ValueError("Threshold must be provided when selecting time to threshold.")
@@ -936,8 +939,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
     selected_features = st.multiselect(
         "Features to compute",
-        options=["endpoint", "auc", "max_slope", "time_to_threshold"],
-        default=["endpoint", "auc", "max_slope"],
+        options=["endpoint", "auc", "max_slope", "max_value", "time_to_threshold"],
+        default=["endpoint", "auc", "max_slope", "max_value"],
         format_func=lambda x: _FEATURE_LABELS.get(x, x),
         key="analyze_selected_features",
     )
@@ -1293,7 +1296,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
     selected_merged_df = selected_signal["merged_df"]
 
     selectable_features: list[tuple[str, str]] = []
-    for feature_name in ["auc", "endpoint", "max_slope", "time_to_threshold"]:
+    for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
         feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
         if feature_column is not None:
             selectable_features.append((feature_name, feature_column))
@@ -1348,6 +1351,22 @@ def _render_analyze_data(st, plate_size: int) -> None:
     )
     if selected_facet_column == "None":
         selected_facet_column = None
+    selected_filter_column = st.selectbox(
+        'Filter (exact match, e.g. date == "2026-04-28")',
+        options=["None", *metadata_columns],
+        index=0,
+        key="compare_features_filter_column",
+    )
+    selected_filter_value = ""
+    if selected_filter_column != "None":
+        selected_filter_value = st.text_input(
+            "Filter value",
+            value="",
+            key="compare_features_filter_value",
+            help="Rows are kept when selected metadata converted to text matches this value exactly.",
+        )
+        if not selected_filter_value.strip():
+            st.info("Type a filter value to apply the metadata filter.")
 
     comparison_df, missing_group_counts = _prepare_feature_comparison_table(
         features_df=selected_features_df,
@@ -1357,6 +1376,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
         color_column=selected_color_column,
         facet_column=selected_facet_column,
     )
+    if selected_filter_column != "None" and selected_filter_value.strip():
+        comparison_df = comparison_df.loc[
+            comparison_df[selected_filter_column].astype(str).str.strip() == selected_filter_value.strip()
+        ].copy()
+        st.caption(
+            f"Applied filter: {selected_filter_column} == '{selected_filter_value.strip()}' "
+            f"({len(comparison_df)} rows after filtering)."
+        )
+        if comparison_df.empty:
+            st.warning("No rows match the selected filter.")
+            return
     for group_column, missing_group_count in missing_group_counts.items():
         if missing_group_count > 0:
             st.warning(f"Grouping column '{group_column}' has {missing_group_count} well(s) with missing labels.")

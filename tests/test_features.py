@@ -7,6 +7,7 @@ from rosettier.features import (
     extract_auc,
     extract_endpoint,
     extract_features,
+    extract_max_value,
     extract_max_slope,
     extract_time_to_threshold,
 )
@@ -45,6 +46,12 @@ def test_extract_max_slope_uses_sorted_time_and_ignores_nans():
     assert out.loc["A03", "max_slope"] == 0.0
 
 
+def test_extract_max_value_returns_peak_observed_value():
+    out = extract_max_value(_tidy_df()).set_index("well")
+    assert out.loc["A01", "max_value"] == 2.0
+    assert out.loc["A03", "max_value"] == 0.0
+
+
 def test_extract_time_to_threshold_returns_first_crossing_or_nan():
     out = extract_time_to_threshold(_tidy_df(), threshold=1.0).set_index("well")
     assert out.loc["A01", "time_to_threshold"] == 1.0
@@ -54,7 +61,7 @@ def test_extract_time_to_threshold_returns_first_crossing_or_nan():
 
 def test_extract_features_combines_outputs_and_preserves_stable_metadata():
     out = extract_features(_tidy_df(), threshold=1.0)
-    assert {"well", "row", "column", "endpoint", "auc", "max_slope", "time_to_threshold", "condition", "plate_id"}.issubset(
+    assert {"well", "row", "column", "endpoint", "auc", "max_slope", "max_value", "time_to_threshold", "condition", "plate_id"}.issubset(
         out.columns
     )
     assert out.set_index("well").loc["A01", "condition"] == "drug"
@@ -69,7 +76,7 @@ def test_extract_features_ignores_non_constant_metadata_within_well():
 
 def test_duplicate_timepoints_within_well_raise_value_error():
     df = pd.concat([_tidy_df(), _tidy_df().iloc[[0]]], ignore_index=True)
-    for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_time_to_threshold, extract_features):
+    for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_max_value, extract_time_to_threshold, extract_features):
         with pytest.raises(SchemaValidationError, match="Duplicate timepoints"):
             if fn is extract_time_to_threshold:
                 fn(df, threshold=0.5)
@@ -79,7 +86,7 @@ def test_duplicate_timepoints_within_well_raise_value_error():
 
 def test_missing_required_columns_raise_value_error():
     df = _tidy_df().drop(columns=["well"])
-    for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_time_to_threshold, extract_features):
+    for fn in (extract_endpoint, extract_auc, extract_max_slope, extract_max_value, extract_time_to_threshold, extract_features):
         with pytest.raises(SchemaValidationError, match="Missing required columns"):
             if fn is extract_time_to_threshold:
                 fn(df, threshold=0.5)
@@ -115,6 +122,7 @@ def test_no_mutation():
     extract_endpoint(df)
     extract_auc(df)
     extract_max_slope(df)
+    extract_max_value(df)
     extract_time_to_threshold(df, threshold=1.0)
     extract_features(df, threshold=1.0)
 
