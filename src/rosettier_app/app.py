@@ -738,8 +738,6 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
     try:
         import matplotlib.pyplot as plt
     except ModuleNotFoundError:
-        if hasattr(fig, "to_image"):
-            return fig.to_image(format=image_format)
         raise RuntimeError("PNG/SVG export requires matplotlib.")
 
     figure = plt.figure(figsize=(10, 6))
@@ -814,6 +812,20 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 linewidth=1.1,
                 label=trace_name if trace_name else "_nolegend_",
             )
+            continue
+
+        if trace_type == "bar":
+            x_values = _x_values_to_numeric(getattr(trace, "x", []))
+            y_values = [float(value) for value in list(getattr(trace, "y", []) or [])]
+            if not x_values or not y_values:
+                continue
+            axis.bar(
+                x_values,
+                y_values,
+                alpha=0.85,
+                width=0.6,
+                label=trace_name if trace_name else "_nolegend_",
+            )
 
     if categorical_x and category_to_index:
         ordered_labels = sorted(category_to_index.items(), key=lambda pair: pair[1])
@@ -850,22 +862,6 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
         return True, None
     except Exception:  # pragma: no cover - depends on local runtime
         return False, "PNG/SVG export requires matplotlib in the app dependencies."
-
-
-def _plotly_static_export_status() -> tuple[bool, str | None]:
-    """Return whether static image export is available, and a user-facing message when unavailable."""
-    import plotly.graph_objects as go
-
-    try:
-        go.Figure().to_image(format="png")
-        return True, None
-    except Exception as exc:  # pragma: no cover - depends on local runtime
-        message = str(exc).lower()
-        if "chrome" in message:
-            return False, "PNG/SVG export requires Kaleido with a local Chrome installation (run: plotly_get_chrome)."
-        if "kaleido" in message:
-            return False, "PNG/SVG export requires Kaleido plus Chrome (install with: pip install kaleido, then run: plotly_get_chrome)."
-        return False, "PNG/SVG export is unavailable in this environment. Install Kaleido and Chrome to enable static image export."
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
@@ -1635,10 +1631,10 @@ def _render_analyze_data(st, plate_size: int) -> None:
     else:
         comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
         ratio_mode = st.checkbox(
-            "Relativizar entre inputs (ej: DO/GFP)",
+            "Compute ratios between signals (e.g., OD/GFP)",
             value=False,
             key="compare_features_ratio_mode",
-            help="Calcula ratios por pozo entre dos señales para un feature seleccionado.",
+            help="Compute per-well ratios between two signals for a selected feature.",
         )
         selected_features_df = None
         selected_merged_df = None
@@ -1650,7 +1646,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
         if ratio_mode:
             numerator_option = st.selectbox(
-                "Numerador",
+                "Numerator",
                 options=comparison_signal_options,
                 format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
                 index=0,
@@ -1658,10 +1654,10 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             denominator_options = [option_id for option_id in comparison_signal_options if option_id != numerator_option]
             if not denominator_options:
-                st.info("Se requieren al menos dos señales para calcular relativizaciones.")
+                st.info("At least two signals are required to compute ratios.")
                 return
             denominator_option = st.selectbox(
-                "Denominador",
+                "Denominator",
                 options=denominator_options,
                 format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
                 index=0,
@@ -1680,7 +1676,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     shared_features.append(feature_name)
 
             if not shared_features:
-                st.info("No hay features compartidos entre numerador y denominador para relativizar.")
+                st.info("No shared features were found between the numerator and denominator signals.")
                 return
 
             selected_feature_name = st.selectbox(
