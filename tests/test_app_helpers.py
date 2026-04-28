@@ -413,25 +413,23 @@ def test_build_feature_comparison_figure_includes_color_column_legend_entries():
     assert "r2" in trace_names
 
 
-def test_plotly_html_bytes_returns_self_contained_html():
+def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
-        def to_html(self, **kwargs):
-            assert kwargs["full_html"] is True
-            assert kwargs["include_plotlyjs"] is True
-            return "<html>offline</html>"
+        def to_image(self, **kwargs):
+            assert kwargs["format"] == "png"
+            return b"png-bytes"
 
-    html_bytes = app._plotly_html_bytes(DummyFigure())
-    assert html_bytes == b"<html>offline</html>"
+    image_bytes = app._plotly_image_bytes(DummyFigure(), image_format="png")
+    assert image_bytes == b"png-bytes"
 
 
-def test_render_plot_download_buttons_renders_html_button_only():
+def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
 
     class DummyFigure:
-        def to_html(self, **kwargs):
-            assert kwargs["full_html"] is True
-            assert kwargs["include_plotlyjs"] is True
-            return "<html>offline</html>"
+        def to_image(self, **kwargs):
+            fmt = kwargs["format"]
+            return f"{fmt}-bytes".encode("utf-8")
 
     class DummySt:
         def download_button(self, **kwargs):
@@ -444,9 +442,11 @@ def test_render_plot_download_buttons_renders_html_button_only():
         key_prefix="plot",
     )
 
-    assert len(calls) == 1
-    assert calls[0]["label"] == "Download plot (HTML)"
-    assert calls[0]["file_name"] == "my_plot.html"
+    assert len(calls) == 2
+    assert calls[0]["label"] == "Download plot (PNG)"
+    assert calls[0]["file_name"] == "my_plot.png"
+    assert calls[1]["label"] == "Download plot (SVG)"
+    assert calls[1]["file_name"] == "my_plot.svg"
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
@@ -528,8 +528,8 @@ def test_build_analysis_bundle_zip_includes_manifest_and_signal_exports():
 
 def test_build_analysis_bundle_zip_includes_comparison_table_and_plots_when_available():
     class DummyFigure:
-        def to_html(self, **kwargs):
-            return "<html><body>plot</body></html>"
+        def to_image(self, **kwargs):
+            return f"{kwargs['format']}-bytes".encode("utf-8")
 
     bundle_bytes = app._build_analysis_bundle_zip(
         signal_results=[
@@ -552,9 +552,11 @@ def test_build_analysis_bundle_zip_includes_comparison_table_and_plots_when_avai
 
     with zipfile.ZipFile(BytesIO(bundle_bytes), mode="r") as bundle:
         names = set(bundle.namelist())
-        assert "signals/OD/raw_curves_plot.html" in names
+        assert "signals/OD/raw_curves_plot.png" in names
+        assert "signals/OD/raw_curves_plot.svg" in names
         assert "comparison/compare_od_auc.csv" in names
-        assert "comparison/comparison_plot.html" in names
+        assert "comparison/comparison_plot.png" in names
+        assert "comparison/comparison_plot.svg" in names
 
 
 def test_build_analysis_bundle_zip_disambiguates_duplicate_signal_slugs():
