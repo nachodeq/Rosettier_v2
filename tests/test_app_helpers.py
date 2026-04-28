@@ -76,11 +76,11 @@ def test_compute_selected_features_returns_only_requested_and_renamed_columns():
     )
     out = app._compute_selected_features(
         tidy,
-        selected_features=["endpoint", "max_slope"],
+        selected_features=["endpoint", "max_slope", "max_value"],
         threshold=None,
         signal_name="GFP",
     )
-    assert {"well", "row", "column", "GFP_endpoint", "GFP_max_slope"} == set(out.columns)
+    assert {"well", "row", "column", "GFP_endpoint", "GFP_max_slope", "GFP_max_value"} == set(out.columns)
     assert "GFP_time_to_threshold" not in out.columns
 
 

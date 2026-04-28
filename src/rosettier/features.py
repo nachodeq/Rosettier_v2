@@ -100,6 +100,18 @@ def extract_max_slope(df: pd.DataFrame) -> pd.DataFrame:
     return _per_well_feature(df, "max_slope", max_slope_for_well)
 
 
+def extract_max_value(df: pd.DataFrame) -> pd.DataFrame:
+    """Return maximum observed non-missing value for each well."""
+
+    def max_value_for_well(group: pd.DataFrame) -> float:
+        observed = group.dropna(subset=["value"])
+        if observed.empty:
+            return float("nan")
+        return float(observed["value"].max())
+
+    return _per_well_feature(df, "max_value", max_value_for_well)
+
+
 def extract_time_to_threshold(df: pd.DataFrame, threshold: float) -> pd.DataFrame:
     """Return first time each well reaches value >= threshold, else NaN."""
 
@@ -114,13 +126,14 @@ def extract_time_to_threshold(df: pd.DataFrame, threshold: float) -> pd.DataFram
 
 
 def extract_features(df: pd.DataFrame, threshold: float | None = None) -> pd.DataFrame:
-    """Combine endpoint/AUC/max slope and optional threshold time into one table."""
+    """Combine endpoint/AUC/max slope/max value and optional threshold time into one table."""
     base = _prepare(df)
 
     features = _well_identity(base)
     features = features.merge(extract_endpoint(base)[["well", "endpoint"]], on="well", how="left")
     features = features.merge(extract_auc(base)[["well", "auc"]], on="well", how="left")
     features = features.merge(extract_max_slope(base)[["well", "max_slope"]], on="well", how="left")
+    features = features.merge(extract_max_value(base)[["well", "max_value"]], on="well", how="left")
 
     if threshold is not None:
         features = features.merge(

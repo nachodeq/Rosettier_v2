@@ -15,6 +15,7 @@ from .features import (
     extract_auc,
     extract_endpoint,
     extract_features,
+    extract_max_value,
     extract_max_slope,
     extract_time_to_threshold,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "summarize_by_group",
     "extract_endpoint",
     "extract_auc",
+    "extract_max_value",
     "extract_max_slope",
     "extract_time_to_threshold",
     "extract_features",
