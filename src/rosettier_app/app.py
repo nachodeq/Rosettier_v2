@@ -543,8 +543,8 @@ def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[s
 
 
 def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
-    """Return plot mode: box for >=3 rows, points for <3 rows."""
-    return "box" if len(comparison_df) >= 3 else "points"
+    """Return plot mode: box for >=2 rows, points for <2 rows."""
+    return "box" if len(comparison_df) >= 2 else "points"
 
 
 def _build_static_comparison_plot_bytes(
@@ -1297,9 +1297,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
             comparison_df,
             x=group_label_column,
             y=selected_feature_column,
-            color=selected_color_column,
             facet_col=selected_facet_column,
-            points="all",
+            points=False,
             hover_name="well",
             hover_data=hover_data,
             labels={
@@ -1311,8 +1310,25 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 f"by {' + '.join(selected_group_columns)}"
             ),
         )
-        fig.update_traces(jitter=0.35, pointpos=0.0, marker={"size": 7, "opacity": 0.75})
-        fig.update_layout(boxmode="group")
+        fig.update_traces(marker={"size": 7, "opacity": 0.75})
+
+        if selected_color_column:
+            strip_fig = px.strip(
+                comparison_df,
+                x=group_label_column,
+                y=selected_feature_column,
+                color=selected_color_column,
+                facet_col=selected_facet_column,
+                hover_name="well",
+                hover_data=hover_data,
+            )
+            strip_fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
+            for trace in strip_fig.data:
+                fig.add_trace(trace)
+            fig.update_layout(boxmode="group")
+        else:
+            fig.update_traces(jitter=0.35, pointpos=0.0)
+            fig.update_layout(boxmode="group")
     else:
         fig = px.strip(
             comparison_df,

@@ -324,8 +324,8 @@ def test_build_group_label_column_supports_multiple_group_columns():
     assert out.tolist() == ["strain=WT | drug=none", "strain=KO | drug=drugA"]
 
 
-def test_comparison_plot_mode_uses_points_for_small_samples():
-    comparison = pd.DataFrame({"well": ["A01", "A02"]})
+def test_comparison_plot_mode_uses_points_for_single_sample():
+    comparison = pd.DataFrame({"well": ["A01"]})
     assert app._comparison_plot_mode(comparison) == "points"
 
 
