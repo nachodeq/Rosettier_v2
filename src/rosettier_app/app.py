@@ -502,20 +502,40 @@ def _prepare_raw_curve_plot_df(
 ) -> pd.DataFrame:
     """Build plot-ready dataframe for raw per-well time-series curves."""
     plot_df = tidy_df.loc[tidy_df["well"].isin(wells_to_plot), ["well", "time", "value"]].copy()
+    plot_df["metadata_label"] = "All wells"
 
-    if merged_df is not None and group_column and group_column in merged_df.columns:
-        group_lookup = (
-            merged_df[["well", group_column]]
-            .dropna(subset=["well"])
-            .drop_duplicates(subset=["well"], keep="first")
-            .rename(columns={group_column: "metadata_group"})
-        )
-        plot_df = plot_df.merge(group_lookup, on="well", how="left")
-        plot_df["metadata_group"] = plot_df["metadata_group"].fillna("—").astype(str)
-    else:
-        plot_df["metadata_group"] = ""
+    if merged_df is None or not group_column:
+        return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
 
+    if group_column not in merged_df.columns:
+        return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
+
+    group_lookup = (
+        merged_df[["well", group_column]]
+        .dropna(subset=["well"])
+        .drop_duplicates(subset=["well"], keep="first")
+        .rename(columns={group_column: "metadata_label"})
+    )
+    plot_df = plot_df.merge(group_lookup, on="well", how="left", suffixes=("", "_from_merge"))
+    if "metadata_label_from_merge" in plot_df.columns:
+        plot_df["metadata_label"] = plot_df["metadata_label_from_merge"]
+        plot_df = plot_df.drop(columns=["metadata_label_from_merge"])
+    plot_df["metadata_label"] = plot_df["metadata_label"].fillna("—").astype(str)
     return plot_df.sort_values(["well", "time"]).reset_index(drop=True)
+
+
+def _resolve_raw_curve_group_column(
+    merged_df: pd.DataFrame | None,
+    selected_group_column: str | None,
+) -> tuple[str | None, str | None]:
+    """Resolve raw-curve metadata grouping safely, returning (column, warning)."""
+    if not selected_group_column:
+        return None, None
+    if merged_df is None:
+        return None, f"Selected metadata column '{selected_group_column}' is unavailable (no merged metadata)."
+    if selected_group_column not in merged_df.columns:
+        return None, f"Selected metadata column '{selected_group_column}' is unavailable in merged data."
+    return selected_group_column, None
 
 
 def _rename_value_column_for_signal(df: pd.DataFrame, signal_name: str) -> pd.DataFrame:
@@ -774,12 +794,21 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     min_time=config.get("min_time") if config else None,
                     max_time=config.get("max_time") if config else None,
                 )
-                tidy_display_df = _rename_value_column_for_signal(tidy_df.head(12), signal_name=signal_name)
-                st.dataframe(tidy_display_df, use_container_width=True)
+                tidy_display_df = _rename_value_column_for_signal(tidy_df, signal_name=signal_name)
                 st.write(
                     f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
                     f"{tidy_df['time'].nunique()} timepoints, time range {tidy_df['time'].min()} to {tidy_df['time'].max()} minutes."
                 )
+                st.dataframe(tidy_display_df, use_container_width=True)
+                if filtered_tidy_df is not None and len(filtered_tidy_df) != len(tidy_df):
+                    st.caption(
+                        f"Preview only (time-filtered tidy): {len(filtered_tidy_df)} rows after time filtering."
+                    )
+                    filtered_preview_df = _rename_value_column_for_signal(
+                        filtered_tidy_df.head(12),
+                        signal_name=signal_name,
+                    )
+                    st.dataframe(filtered_preview_df, use_container_width=True)
             except Exception as exc:  # pragma: no cover - defensive streamlit display
                 st.error(f"Failed to parse measurements for {signal_name}: {exc}")
                 continue
@@ -795,36 +824,38 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         plate_size=plate_size,
                         layout_well_col=layout_well_column,
                     )
-                    merged_preview_df = _rename_value_column_for_signal(merged_df.head(12), signal_name=signal_name)
                     st.caption("Merged preview")
+                    st.write(
+                        f"Merged summary: {len(merged_df)} rows, {merged_df['well'].nunique()} wells, "
+                        f"{merged_df['time'].nunique()} timepoints, time range {merged_df['time'].min()} to {merged_df['time'].max()} minutes."
+                    )
+                    merged_preview_df = _rename_value_column_for_signal(merged_df, signal_name=signal_name)
                     st.dataframe(merged_preview_df, use_container_width=True)
                 except Exception as exc:  # pragma: no cover - defensive streamlit display
                     st.error(f"Failed to validate/merge Rosetta layout for {signal_name}: {exc}")
 
             st.markdown("#### Raw curves")
             available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
-            selector_df = _build_rosetta_table(PlateSpec.from_size(plate_size))
-            selector_df = selector_df.loc[selector_df["well"].isin(available_wells)].reset_index(drop=True)
             selected_wells_key = f"analyze_selected_wells_{signal_slug}"
             if selected_wells_key not in st.session_state:
                 st.session_state[selected_wells_key] = []
-            selector_figure = _make_plate_figure(
-                selector_df,
-                PlateSpec.from_size(plate_size),
-                selected_wells=st.session_state[selected_wells_key],
-                color_variable=None,
+            existing_selected_wells = [
+                well for well in st.session_state[selected_wells_key] if well in set(available_wells)
+            ]
+            if existing_selected_wells != st.session_state[selected_wells_key]:
+                st.session_state[selected_wells_key] = existing_selected_wells
+            multiselect_key = f"analyze_well_selector_{signal_slug}"
+            selected_wells = st.multiselect(
+                "Wells to plot (optional; leave empty for all wells)",
+                options=available_wells,
+                default=existing_selected_wells,
+                key=multiselect_key,
+                help="Search and select wells. Empty selection plots all wells.",
             )
-            selector_event = st.plotly_chart(
-                selector_figure,
-                use_container_width=True,
-                key=f"analyze_plate_selector_{signal_slug}",
-                on_select="rerun",
-            )
-            just_selected = _selected_wells_from_event(selector_event, selector_df)
-            if _event_contains_selection_payload(selector_event):
-                st.session_state[selected_wells_key] = sorted(set(just_selected))
+            st.session_state[selected_wells_key] = selected_wells
             if st.button("Clear plate selection", key=f"analyze_clear_plate_selection_{signal_slug}"):
                 st.session_state[selected_wells_key] = []
+                st.session_state[multiselect_key] = []
                 st.rerun()
             st.caption(
                 "No wells selected plots all wells. "
@@ -832,9 +863,6 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
 
             wells_filtered_df = _filter_selected_wells(filtered_tidy_df, st.session_state[selected_wells_key])
-            plot_df = wells_filtered_df[["well", "time", "value"]].copy()
-            plot_df["metadata_label"] = "—"
-
             metadata_columns = _metadata_columns_for_raw_curves(merged_df)
             selected_group_column = None
             if metadata_columns:
@@ -846,24 +874,25 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 )
                 if selected_group_column == "None":
                     selected_group_column = None
-            if selected_group_column and merged_df is not None:
-                group_lookup = (
-                    merged_df[["well", selected_group_column]]
-                    .drop_duplicates(subset=["well"], keep="first")
-                    .rename(columns={selected_group_column: "metadata_label"})
-                )
-                plot_df = plot_df.merge(group_lookup, on="well", how="left")
-                plot_df["metadata_label"] = plot_df["metadata_label"].fillna("—").astype(str)
+            resolved_group_column, group_column_warning = _resolve_raw_curve_group_column(merged_df, selected_group_column)
+            if group_column_warning:
+                st.warning(group_column_warning)
+            plot_df = _prepare_raw_curve_plot_df(
+                wells_filtered_df,
+                wells_to_plot=sorted(wells_filtered_df["well"].dropna().astype(str).unique().tolist()),
+                merged_df=merged_df,
+                group_column=resolved_group_column,
+            )
 
             import plotly.express as px
 
-            color_map = _metadata_color_value_map(plot_df, "metadata_label" if selected_group_column else None)
-            if selected_group_column:
+            color_map = _metadata_color_value_map(plot_df, "metadata_label" if resolved_group_column else None)
+            if resolved_group_column:
                 color_column = "metadata_label"
                 labels = {
                     "time": "Elapsed time (minutes)",
                     "value": signal_name,
-                    "metadata_label": selected_group_column,
+                    "metadata_label": resolved_group_column,
                 }
             else:
                 color_column = "well_color"
@@ -875,14 +904,14 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 y="value",
                 line_group="well",
                 color=color_column,
-                color_discrete_map=color_map if selected_group_column else {"All wells": "#4c78a8"},
+                color_discrete_map=color_map if resolved_group_column else {"All wells": "#4c78a8"},
                 labels=labels,
                 title=f"Raw {signal_name} curves",
                 custom_data=["well", "metadata_label"],
             )
             hover_tail = (
-                f"<br>{selected_group_column}: %{{customdata[1]}}<extra></extra>"
-                if selected_group_column
+                f"<br>{resolved_group_column}: %{{customdata[1]}}<extra></extra>"
+                if resolved_group_column
                 else "<extra></extra>"
             )
             fig.update_traces(
@@ -926,9 +955,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     st.error(f"Failed to compute QC summary for {signal_name}: {exc}")
 
             st.markdown("#### Results and export")
+            st.caption("Preview only (filtered tidy)")
             filtered_display_df = _rename_value_column_for_signal(filtered_tidy_df.head(12), signal_name=signal_name)
             st.dataframe(filtered_display_df, use_container_width=True)
             if features_df is not None and features_df.shape[1] > 3:
+                st.caption("Preview only (features)")
                 st.dataframe(features_df.head(12), use_container_width=True)
             tidy_export_df = _rename_value_column_for_signal(filtered_tidy_df, signal_name=signal_name)
             st.download_button(
