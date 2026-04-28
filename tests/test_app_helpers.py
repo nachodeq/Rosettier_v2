@@ -350,6 +350,16 @@ def test_comparison_plot_mode_uses_box_when_any_group_has_replicates():
             "__compare_group_label__": ["WT", "WT", "KO"],
         }
     )
+    assert app._comparison_plot_mode(comparison) == "points"
+
+
+def test_comparison_plot_mode_uses_box_when_any_group_has_more_than_two_points():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "A04"],
+            "__compare_group_label__": ["WT", "WT", "WT", "KO"],
+        }
+    )
     assert app._comparison_plot_mode(comparison) == "box"
 
 
@@ -412,6 +422,29 @@ def test_try_plotly_static_export_bytes_handles_kaleido_chrome_failure():
 
     assert image is None
     assert warning == "PNG/SVG export requires Kaleido with Chrome installed. HTML export is available."
+
+
+def test_plotly_html_bytes_returns_self_contained_html():
+    class DummyFigure:
+        def to_html(self, **kwargs):
+            assert kwargs["full_html"] is True
+            assert kwargs["include_plotlyjs"] is True
+            return "<html>offline</html>"
+
+    html_bytes = app._plotly_html_bytes(DummyFigure())
+    assert html_bytes == b"<html>offline</html>"
+
+
+def test_plotly_static_export_status_missing_chrome(monkeypatch):
+    monkeypatch.setitem(__import__("sys").modules, "kaleido", object())
+    monkeypatch.setattr(app.shutil, "which", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(app.os.path, "exists", lambda *_args, **_kwargs: False)
+
+    ready, message = app._plotly_static_export_status()
+
+    assert ready is False
+    assert message is not None
+    assert "Chrome" in message
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
