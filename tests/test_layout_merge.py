@@ -46,3 +46,19 @@ def test_layout_mismatch_missing_well_raises():
 def test_layout_measurement_plate_size_mismatch_raises():
     with pytest.raises(PlateSizeMismatchError):
         merge_measurements_with_layout(_measurement_long(96), _layout_df(384), plate_size=96)
+
+
+def test_merge_measurements_with_layout_avoids_layout_suffix_collisions():
+    measurements = _measurement_long(96).copy()
+    wells = PlateSpec.from_size(96).canonical_wells()
+    layout = pd.DataFrame(
+        {
+            "well": wells,
+            "time": [0] * len(wells),
+            "time_layout": ["meta"] * len(wells),
+        }
+    )
+
+    merged = merge_measurements_with_layout(measurements, layout, plate_size=96)
+    assert "time_layout_1" in merged.columns
+    assert "time_layout" in merged.columns
