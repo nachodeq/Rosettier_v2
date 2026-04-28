@@ -726,8 +726,125 @@ def _build_feature_comparison_figure(
 
 
 def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
-    """Serialize Plotly figure to static image bytes."""
-    return fig.to_image(format=image_format)
+    """Serialize Plotly figure to static image bytes using a matplotlib backend."""
+    if image_format not in {"png", "svg"}:
+        raise ValueError(f"Unsupported image format: {image_format}")
+
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError:
+        if hasattr(fig, "to_image"):
+            return fig.to_image(format=image_format)
+        raise RuntimeError("PNG/SVG export requires matplotlib.")
+
+    figure = plt.figure(figsize=(10, 6))
+    axis = figure.add_subplot(1, 1, 1)
+
+    categorical_x = False
+    category_to_index: dict[str, int] = {}
+
+    def _x_values_to_numeric(x_values) -> list[float]:
+        nonlocal categorical_x
+        values = list(x_values) if x_values is not None else []
+        if not values:
+            return []
+        numeric_values: list[float] = []
+        for value in values:
+            if isinstance(value, (int, float, np.number)) and not pd.isna(value):
+                numeric_values.append(float(value))
+                continue
+            categorical_x = True
+            label = str(value)
+            if label not in category_to_index:
+                category_to_index[label] = len(category_to_index)
+            numeric_values.append(float(category_to_index[label]))
+        return numeric_values
+
+    for trace in fig.data:
+        trace_type = str(getattr(trace, "type", "")).lower()
+        trace_name = str(getattr(trace, "name", "") or "")
+        if trace_type == "box":
+            x_values = list(getattr(trace, "x", []) or [])
+            y_values = list(getattr(trace, "y", []) or [])
+            grouped: dict[str, list[float]] = {}
+            for x_value, y_value in zip(x_values, y_values, strict=False):
+                if pd.isna(y_value):
+                    continue
+                label = str(x_value)
+                grouped.setdefault(label, []).append(float(y_value))
+                if label not in category_to_index:
+                    category_to_index[label] = len(category_to_index)
+                categorical_x = True
+            if grouped:
+                labels = list(grouped.keys())
+                positions = [category_to_index[label] for label in labels]
+                axis.boxplot(
+                    [grouped[label] for label in labels],
+                    positions=positions,
+                    widths=0.45,
+                    patch_artist=True,
+                    boxprops={"facecolor": "#dddddd", "edgecolor": "#666666", "linewidth": 1.0},
+                    whiskerprops={"color": "#666666", "linewidth": 1.0},
+                    capprops={"color": "#666666", "linewidth": 1.0},
+                    medianprops={"color": "#444444", "linewidth": 1.2},
+                )
+            continue
+
+        if trace_type == "scatter":
+            x_values = _x_values_to_numeric(getattr(trace, "x", []))
+            y_values = [float(value) for value in list(getattr(trace, "y", []) or [])]
+            if not x_values or not y_values:
+                continue
+
+            mode = str(getattr(trace, "mode", "")).lower()
+            marker = "o" if "markers" in mode else None
+            linestyle = "-" if "lines" in mode else "None"
+            axis.plot(
+                x_values,
+                y_values,
+                linestyle=linestyle,
+                marker=marker,
+                alpha=0.85,
+                markersize=4.8,
+                linewidth=1.1,
+                label=trace_name if trace_name else "_nolegend_",
+            )
+
+    if categorical_x and category_to_index:
+        ordered_labels = sorted(category_to_index.items(), key=lambda pair: pair[1])
+        axis.set_xticks([position for _, position in ordered_labels])
+        axis.set_xticklabels([label for label, _ in ordered_labels], rotation=32, ha="right")
+
+    plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
+    if plot_title:
+        axis.set_title(plot_title)
+    x_axis = getattr(fig.layout, "xaxis", None)
+    y_axis = getattr(fig.layout, "yaxis", None)
+    x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
+    y_axis_title = str(getattr(getattr(y_axis, "title", None), "text", "") or "")
+    if x_axis_title:
+        axis.set_xlabel(x_axis_title)
+    if y_axis_title:
+        axis.set_ylabel(y_axis_title)
+    axis.grid(alpha=0.25)
+    handles, labels = axis.get_legend_handles_labels()
+    if any(label and label != "_nolegend_" for label in labels):
+        axis.legend(loc="best", frameon=False)
+
+    buffer = BytesIO()
+    figure.tight_layout()
+    figure.savefig(buffer, format=image_format, bbox_inches="tight")
+    plt.close(figure)
+    return buffer.getvalue()
+
+
+def _plotly_static_export_status() -> tuple[bool, str | None]:
+    """Return whether matplotlib static image export is available."""
+    try:
+        import matplotlib  # noqa: F401
+        return True, None
+    except Exception:  # pragma: no cover - depends on local runtime
+        return False, "PNG/SVG export requires matplotlib in the app dependencies."
 
 
 def _plotly_static_export_status() -> tuple[bool, str | None]:
@@ -747,17 +864,7 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
-    """Render HTML and static image download buttons for a Plotly figure."""
-    html_bytes = fig.to_html(full_html=True, include_plotlyjs=True).encode("utf-8")
-    st.download_button(
-        label="Download plot (HTML)",
-        data=html_bytes,
-        file_name=f"{filename_stem}.html",
-        mime="text/html",
-        key=f"{key_prefix}_html",
-        on_click="ignore",
-    )
-
+    """Render static image download buttons for a Plotly figure."""
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
         st.caption(unavailable_message)

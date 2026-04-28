@@ -467,11 +467,12 @@ def test_build_feature_comparison_figure_keeps_neutral_boxplot_when_color_column
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
         def to_image(self, **kwargs):
-            assert kwargs["format"] == "png"
-            return b"png-bytes"
+            return f"{kwargs['format']}-bytes".encode("utf-8")
 
-    image_bytes = app._plotly_image_bytes(DummyFigure(), image_format="png")
-    assert image_bytes == b"png-bytes"
+    png_bytes = app._plotly_image_bytes(DummyFigure(), image_format="png")
+    svg_bytes = app._plotly_image_bytes(DummyFigure(), image_format="svg")
+    assert png_bytes == b"png-bytes"
+    assert svg_bytes == b"svg-bytes"
 
 
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
@@ -505,13 +506,11 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     finally:
         app._plotly_static_export_status = original_status
 
-    assert len(calls) == 3
-    assert calls[0]["label"] == "Download plot (HTML)"
-    assert calls[0]["file_name"] == "my_plot.html"
-    assert calls[1]["label"] == "Download plot (PNG)"
-    assert calls[1]["file_name"] == "my_plot.png"
-    assert calls[2]["label"] == "Download plot (SVG)"
-    assert calls[2]["file_name"] == "my_plot.svg"
+    assert len(calls) == 2
+    assert calls[0]["label"] == "Download plot (PNG)"
+    assert calls[0]["file_name"] == "my_plot.png"
+    assert calls[1]["label"] == "Download plot (SVG)"
+    assert calls[1]["file_name"] == "my_plot.svg"
     assert captions == []
 
 
@@ -520,8 +519,7 @@ def test_render_plot_download_buttons_shows_friendly_message_when_static_export_
     captions: list[str] = []
 
     class DummyFigure:
-        def to_html(self, **kwargs):
-            return "<html></html>"
+        pass
 
     class DummySt:
         def download_button(self, **kwargs):
@@ -531,7 +529,7 @@ def test_render_plot_download_buttons_shows_friendly_message_when_static_export_
             captions.append(str(text))
 
     original_status = app._plotly_static_export_status
-    app._plotly_static_export_status = lambda: (False, "PNG/SVG export requires Kaleido with Chrome.")
+    app._plotly_static_export_status = lambda: (False, "PNG/SVG export requires matplotlib in the app dependencies.")
     try:
         app._render_plot_download_buttons(
             DummySt(),
@@ -542,9 +540,8 @@ def test_render_plot_download_buttons_shows_friendly_message_when_static_export_
     finally:
         app._plotly_static_export_status = original_status
 
-    assert len(calls) == 1
-    assert calls[0]["label"] == "Download plot (HTML)"
-    assert captions == ["PNG/SVG export requires Kaleido with Chrome."]
+    assert calls == []
+    assert captions == ["PNG/SVG export requires matplotlib in the app dependencies."]
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
