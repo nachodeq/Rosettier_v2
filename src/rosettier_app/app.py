@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from io import StringIO
+from io import BytesIO, StringIO
 
 import pandas as pd
 
@@ -545,6 +545,64 @@ def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[s
 def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
     """Return plot mode: box for >=2 rows, points for <2 rows."""
     return "box" if len(comparison_df) >= 2 else "points"
+
+
+def _build_static_comparison_plot_bytes(
+    *,
+    comparison_df: pd.DataFrame,
+    group_label_column: str,
+    feature_column: str,
+    title: str,
+    color_column: str | None,
+    format: str,
+) -> bytes:
+    """Build an offline static comparison plot (PNG/SVG) without Plotly image backends."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    plot_df = comparison_df[[group_label_column, feature_column]].copy()
+    if color_column and color_column in comparison_df.columns:
+        plot_df[color_column] = comparison_df[color_column].astype(str)
+    plot_df[feature_column] = pd.to_numeric(plot_df[feature_column], errors="coerce")
+    plot_df = plot_df.dropna(subset=[group_label_column, feature_column])
+    if plot_df.empty:
+        raise ValueError("No finite values available to export static plot.")
+
+    group_order = plot_df[group_label_column].astype(str).drop_duplicates().tolist()
+    group_to_position = {group: idx + 1 for idx, group in enumerate(group_order)}
+
+    grouped_values = [plot_df.loc[plot_df[group_label_column].astype(str) == group, feature_column].tolist() for group in group_order]
+
+    fig, ax = plt.subplots(figsize=(max(10, len(group_order) * 0.5), 6))
+    ax.boxplot(grouped_values, positions=list(range(1, len(group_order) + 1)), widths=0.6, patch_artist=True)
+
+    rng = np.random.default_rng(7)
+    if color_column and color_column in plot_df.columns:
+        color_values = plot_df[color_column].dropna().astype(str).drop_duplicates().tolist()
+        cmap = plt.get_cmap("tab20")
+        color_map = {value: cmap(idx % 20) for idx, value in enumerate(color_values)}
+        for color_value, chunk in plot_df.groupby(color_column, dropna=False):
+            x_base = chunk[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
+            x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(chunk))
+            ax.scatter(x_jitter, chunk[feature_column], s=28, alpha=0.8, color=color_map.get(str(color_value), "#4c78a8"), label=str(color_value))
+        if color_values:
+            ax.legend(title=color_column, loc="upper left", bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0, fontsize=8)
+    else:
+        x_base = plot_df[group_label_column].astype(str).map(group_to_position).astype(float).to_numpy()
+        x_jitter = x_base + rng.uniform(-0.15, 0.15, size=len(plot_df))
+        ax.scatter(x_jitter, plot_df[feature_column], s=28, alpha=0.8, color="#4c78a8")
+
+    ax.set_xticks(range(1, len(group_order) + 1))
+    ax.set_xticklabels(group_order, rotation=35, ha="right")
+    ax.set_xlabel(group_label_column)
+    ax.set_ylabel(feature_column)
+    ax.set_title(title)
+    fig.tight_layout()
+
+    output = BytesIO()
+    fig.savefig(output, format=format, dpi=180)
+    plt.close(fig)
+    return output.getvalue()
 
 
 def _combine_qc_outputs_for_export(qc: dict) -> pd.DataFrame:
@@ -1292,9 +1350,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
         fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
     st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
 
-    html_bytes = fig.to_html(include_plotlyjs="cdn", full_html=True).encode("utf-8")
+    html_bytes = fig.to_html(include_plotlyjs=True, full_html=True).encode("utf-8")
     st.download_button(
-        label="Download plot (HTML)",
+        label="Download plot (HTML, offline)",
         data=html_bytes,
         file_name=(
             f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
@@ -1304,40 +1362,68 @@ def _render_analyze_data(st, plate_size: int) -> None:
         key=f"download_compare_plot_html_{selected_signal_slug}",
         on_click="ignore",
     )
+    st.caption(
+        "Offline export: HTML includes Plotly JS inline and does not require Kaleido, Chrome, or internet access."
+    )
 
+    st.download_button(
+        label="Download plot spec (JSON)",
+        data=fig.to_json(),
+        file_name=(
+            f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+            f"by_{'_'.join(selected_group_columns)}.json"
+        ),
+        mime="application/json",
+        key=f"download_compare_plot_json_{selected_signal_slug}",
+        on_click="ignore",
+    )
     image_col1, image_col2 = st.columns(2)
     with image_col1:
         try:
-            png_bytes = fig.to_image(format="png")
+            png_bytes = _build_static_comparison_plot_bytes(
+                comparison_df=comparison_df,
+                group_label_column=group_label_column,
+                feature_column=selected_feature_column,
+                title=fig.layout.title.text or "Comparison plot",
+                color_column=selected_color_column,
+                format="png",
+            )
             st.download_button(
-                label="Download plot (PNG)",
+                label="Download plot (PNG, offline)",
                 data=png_bytes,
                 file_name=(
                     f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
                     f"by_{'_'.join(selected_group_columns)}.png"
                 ),
                 mime="image/png",
-                key=f"download_compare_plot_png_{selected_signal_slug}",
+                key=f"download_compare_plot_png_offline_{selected_signal_slug}",
                 on_click="ignore",
             )
-        except Exception as exc:  # pragma: no cover - depends on runtime image backend
-            st.warning(f"PNG export unavailable in this environment: {exc}")
+        except Exception as exc:  # pragma: no cover - depends on optional matplotlib backend
+            st.warning(f"Offline PNG export unavailable in this environment: {exc}")
     with image_col2:
         try:
-            svg_bytes = fig.to_image(format="svg")
+            svg_bytes = _build_static_comparison_plot_bytes(
+                comparison_df=comparison_df,
+                group_label_column=group_label_column,
+                feature_column=selected_feature_column,
+                title=fig.layout.title.text or "Comparison plot",
+                color_column=selected_color_column,
+                format="svg",
+            )
             st.download_button(
-                label="Download plot (SVG)",
+                label="Download plot (SVG, offline)",
                 data=svg_bytes,
                 file_name=(
                     f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
                     f"by_{'_'.join(selected_group_columns)}.svg"
                 ),
                 mime="image/svg+xml",
-                key=f"download_compare_plot_svg_{selected_signal_slug}",
+                key=f"download_compare_plot_svg_offline_{selected_signal_slug}",
                 on_click="ignore",
             )
-        except Exception as exc:  # pragma: no cover - depends on runtime image backend
-            st.warning(f"SVG export unavailable in this environment: {exc}")
+        except Exception as exc:  # pragma: no cover - depends on optional matplotlib backend
+            st.warning(f"Offline SVG export unavailable in this environment: {exc}")
 
     st.caption("Comparison table used for plotting")
     st.dataframe(comparison_df, use_container_width=True)
