@@ -41,6 +41,12 @@ def test_selected_wells_from_event_maps_point_indices_to_wells():
     assert wells == ["A01", "A03"]
 
 
+def test_event_contains_selection_payload_distinguishes_no_event_from_empty_selection():
+    assert app._event_contains_selection_payload(None) is False
+    assert app._event_contains_selection_payload({}) is False
+    assert app._event_contains_selection_payload({"selection": {"points": []}}) is True
+
+
 def test_filter_tidy_by_time_window_applies_bounds_without_mutating_input():
     tidy = pd.DataFrame(
         {

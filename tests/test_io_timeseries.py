@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from pathlib import Path
 
-from rosettier.exceptions import DuplicatedTimepointError, MissingWellError, NonNumericMeasurementError
+from rosettier.exceptions import DuplicatedTimepointError, MissingWellError, NonNumericMeasurementError, PlateSizeMismatchError
 from rosettier.io import parse_endpoint, parse_plate_reader_wide, parse_timeseries_wide, wide_to_long
 from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec
@@ -150,6 +150,26 @@ def test_parse_plate_reader_wide_reports_time_errors():
     text = _plate_reader_text(96, delimiter="\t", decimal=",").replace("0:00:00", "not_a_time", 1)
     with pytest.raises(ValueError, match="Unable to parse time value"):
         parse_plate_reader_wide(text, plate_size=96, time_col="Time", delimiter="tab", decimal="comma")
+
+
+def test_parse_plate_reader_wide_rejects_columns_from_different_plate_format():
+    text = _plate_reader_text(96, delimiter="\t", decimal=".")
+    lines = text.strip().splitlines()
+    lines[0] = f"{lines[0]}\tI1"
+    lines[1] = f"{lines[1]}\t0.123"
+    lines[2] = f"{lines[2]}\t0.456"
+
+    with pytest.raises(PlateSizeMismatchError, match="384-well"):
+        parse_plate_reader_wide("\n".join(lines) + "\n", plate_size=96, time_col="Time", delimiter="tab", decimal="point")
+
+
+def test_parse_plate_reader_wide_auto_decimal_parses_mixed_separators_eu_style():
+    text = _plate_reader_text(96, delimiter="\t", decimal=",")
+    text = text.replace("\t0,001\t", "\t1.234,56\t", 1)
+
+    tidy = parse_plate_reader_wide(text, plate_size=96, time_col="Time", delimiter="tab", decimal="auto")
+    a01_t0 = tidy[(tidy["well"] == "A01") & (tidy["time"] == 0.0)]["value"].iloc[0]
+    assert a01_t0 == pytest.approx(1234.56)
 
 
 def test_parse_plate_reader_wide_merge_with_layout_metadata_fixture_smoke():

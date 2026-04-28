@@ -7,7 +7,7 @@ import re
 
 import pandas as pd
 
-from .exceptions import DuplicatedTimepointError, NonNumericMeasurementError
+from .exceptions import DuplicatedTimepointError, NonNumericMeasurementError, PlateSizeMismatchError
 from .plates import PlateSpec, infer_plate_size, normalize_well, validate_complete_well_set
 
 _TIME_HMS_PATTERN = re.compile(r"^\s*(?:(\d+):)?(\d+):(\d+(?:[.,]\d+)?)\s*$")
@@ -36,6 +36,9 @@ def _normalize_decimal_text(value: object, decimal: str) -> object:
         has_comma = "," in text
         has_point = "." in text
         if has_comma and has_point:
+            last_separator = max(text.rfind(","), text.rfind("."))
+            if text[last_separator] == ",":
+                return text.replace(".", "").replace(",", ".")
             return text.replace(",", "")
         if has_comma and not has_point:
             return text.replace(",", ".")
@@ -184,12 +187,23 @@ def parse_plate_reader_wide(
     spec = PlateSpec.from_size(plate_size)
     rename_map: dict[str, str] = {}
     well_cols: list[str] = []
+    alternate_sizes = [size for size in (96, 384) if size != plate_size]
+    alternate_specs = [PlateSpec.from_size(size) for size in alternate_sizes]
     for column in raw.columns:
         if column == time_col:
             continue
         try:
             canonical = normalize_well(str(column), spec=spec)
         except Exception:
+            for alternate_spec in alternate_specs:
+                try:
+                    normalize_well(str(column), spec=alternate_spec)
+                except Exception:
+                    continue
+                raise PlateSizeMismatchError(
+                    f"Column {column!r} is invalid for selected {plate_size}-well plate and indicates a "
+                    f"{alternate_spec.size}-well layout."
+                ) from None
             continue
         rename_map[column] = canonical
         well_cols.append(column)

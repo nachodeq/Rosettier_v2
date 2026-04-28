@@ -56,4 +56,5 @@ def merge_measurements_with_layout(
         left_on=measurement_well_col,
         right_on=layout_well_col,
         how="left",
+        suffixes=("", "_layout"),
     )

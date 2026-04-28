@@ -76,3 +76,14 @@ def test_run_pipeline_requires_layout_with_well_column():
     bad_layout = _layout().drop(columns=["well"])
     with pytest.raises(SchemaValidationError, match="Missing required columns"):
         run_pipeline(_timeseries_wide(), layout_df=bad_layout)
+
+
+def test_run_pipeline_preserves_canonical_time_and_value_columns_after_layout_merge():
+    layout = _layout().copy()
+    layout["time"] = "metadata-time"
+    layout["value"] = "metadata-value"
+
+    out = run_pipeline(_timeseries_wide(), layout_df=layout, mode="timeseries", extract_features=False, compute_qc=False)
+
+    assert {"time", "value"}.issubset(out["tidy"].columns)
+    assert {"time_layout", "value_layout"}.issubset(out["tidy"].columns)
