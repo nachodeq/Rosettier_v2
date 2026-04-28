@@ -875,24 +875,43 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
-    """Render static image download buttons for a Plotly figure."""
+    """Render export preview and static image download buttons for a Plotly figure."""
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
         st.caption(unavailable_message)
         return
 
-    for image_format, mime_type in [("png", "image/png"), ("svg", "image/svg+xml")]:
-        try:
-            image_bytes = _plotly_image_bytes(fig, image_format=image_format)
-        except Exception:  # pragma: no cover - depends on runtime image backend
-            st.caption(f"Plot export ({image_format.upper()}) unavailable in this environment.")
-            continue
+    st.caption("Export preview (PNG): this is exactly what the app will download.")
+    try:
+        png_bytes = _plotly_image_bytes(fig, image_format="png")
+    except Exception:  # pragma: no cover - depends on runtime image backend
+        st.caption("Plot export (PNG) unavailable in this environment.")
+        png_bytes = None
+
+    if png_bytes is not None:
+        st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
         st.download_button(
-            label=f"Download plot ({image_format.upper()})",
-            data=image_bytes,
-            file_name=f"{filename_stem}.{image_format}",
-            mime=mime_type,
-            key=f"{key_prefix}_{image_format}",
+            label="Download plot (PNG)",
+            data=png_bytes,
+            file_name=f"{filename_stem}.png",
+            mime="image/png",
+            key=f"{key_prefix}_png",
+            on_click="ignore",
+        )
+
+    try:
+        svg_bytes = _plotly_image_bytes(fig, image_format="svg")
+    except Exception:  # pragma: no cover - depends on runtime image backend
+        st.caption("Plot export (SVG) unavailable in this environment.")
+        svg_bytes = None
+
+    if svg_bytes is not None:
+        st.download_button(
+            label="Download plot (SVG)",
+            data=svg_bytes,
+            file_name=f"{filename_stem}.svg",
+            mime="image/svg+xml",
+            key=f"{key_prefix}_svg",
             on_click="ignore",
         )
 
