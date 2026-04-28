@@ -328,6 +328,13 @@ def test_build_group_label_column_supports_multiple_group_columns():
     assert out.tolist() == ["WT | none", "KO | drugA"]
 
 
+def test_build_group_label_column_uses_clean_values_without_column_prefixes():
+    comparison = pd.DataFrame({"well": ["A01"], "carbonsource": ["glucose"]})
+    out = app._build_group_label_column(comparison, ["carbonsource"])
+    assert out.tolist() == ["glucose"]
+    assert "carbonsource=" not in out.iloc[0]
+
+
 def test_comparison_plot_mode_uses_points_for_single_sample():
     comparison = pd.DataFrame({"well": ["A01"]})
     assert app._comparison_plot_mode(comparison) == "points"
@@ -361,6 +368,16 @@ def test_comparison_plot_mode_uses_box_when_any_group_has_more_than_two_points()
         }
     )
     assert app._comparison_plot_mode(comparison) == "box"
+
+
+def test_groups_eligible_for_boxplot_marks_only_groups_with_more_than_two_points():
+    comparison = pd.DataFrame(
+        {
+            "__compare_group_label__": ["WT", "WT", "WT", "KO", "KO"],
+            "well": ["A01", "A02", "A03", "B01", "B02"],
+        }
+    )
+    assert app._groups_eligible_for_boxplot(comparison) == {"WT"}
 
 
 def test_build_feature_comparison_figure_returns_plotly_figure():
@@ -413,18 +430,54 @@ def test_build_feature_comparison_figure_includes_color_column_legend_entries():
     assert "r2" in trace_names
 
 
+def test_build_feature_comparison_figure_keeps_neutral_boxplot_when_color_column_selected():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "B01", "B02"],
+            "strain": ["WT", "WT", "WT", "KO", "KO"],
+            "replicate": ["r1", "r2", "r3", "r1", "r2"],
+            "feature_auc": [1.0, 2.0, 3.0, 0.5, 0.8],
+        }
+    )
+
+    fig, _ = app._build_feature_comparison_figure(
+        comparison_df=comparison,
+        group_columns=["strain"],
+        feature_column="feature_auc",
+        feature_label="AUC",
+        signal_name="OD",
+        feature_name="auc",
+        color_column="replicate",
+        facet_column=None,
+    )
+
+    box_traces = [trace for trace in fig.data if trace.type == "box"]
+    assert len(box_traces) == 1
+    assert set(box_traces[0].x) == {"WT"}
+    assert box_traces[0].name == "Boxplot"
+    scatter_groups = {
+        x_value
+        for trace in fig.data
+        if trace.type == "scatter"
+        for x_value in trace.x
+    }
+    assert scatter_groups == {"WT", "KO"}
+
+
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
         def to_image(self, **kwargs):
-            assert kwargs["format"] == "png"
-            return b"png-bytes"
+            return f"{kwargs['format']}-bytes".encode("utf-8")
 
-    image_bytes = app._plotly_image_bytes(DummyFigure(), image_format="png")
-    assert image_bytes == b"png-bytes"
+    png_bytes = app._plotly_image_bytes(DummyFigure(), image_format="png")
+    svg_bytes = app._plotly_image_bytes(DummyFigure(), image_format="svg")
+    assert png_bytes == b"png-bytes"
+    assert svg_bytes == b"svg-bytes"
 
 
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
+    captions: list[str] = []
 
     class DummyFigure:
         def to_image(self, **kwargs):
@@ -435,18 +488,57 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
         def download_button(self, **kwargs):
             calls.append(kwargs)
 
-    app._render_plot_download_buttons(
-        DummySt(),
-        fig=DummyFigure(),
-        filename_stem="my_plot",
-        key_prefix="plot",
-    )
+        def caption(self, text):
+            captions.append(str(text))
+
+    original_status = app._plotly_static_export_status
+    app._plotly_static_export_status = lambda: (True, None)
+    try:
+        app._render_plot_download_buttons(
+            DummySt(),
+            fig=DummyFigure(),
+            filename_stem="my_plot",
+            key_prefix="plot",
+        )
+    finally:
+        app._plotly_static_export_status = original_status
 
     assert len(calls) == 2
     assert calls[0]["label"] == "Download plot (PNG)"
     assert calls[0]["file_name"] == "my_plot.png"
     assert calls[1]["label"] == "Download plot (SVG)"
     assert calls[1]["file_name"] == "my_plot.svg"
+    assert captions == []
+
+
+def test_render_plot_download_buttons_shows_friendly_message_when_static_export_unavailable():
+    calls: list[dict] = []
+    captions: list[str] = []
+
+    class DummyFigure:
+        pass
+
+    class DummySt:
+        def download_button(self, **kwargs):
+            calls.append(kwargs)
+
+        def caption(self, text):
+            captions.append(str(text))
+
+    original_status = app._plotly_static_export_status
+    app._plotly_static_export_status = lambda: (False, "PNG/SVG export requires matplotlib in the app dependencies.")
+    try:
+        app._render_plot_download_buttons(
+            DummySt(),
+            fig=DummyFigure(),
+            filename_stem="my_plot",
+            key_prefix="plot",
+        )
+    finally:
+        app._plotly_static_export_status = original_status
+
+    assert calls == []
+    assert captions == ["PNG/SVG export requires matplotlib in the app dependencies."]
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():

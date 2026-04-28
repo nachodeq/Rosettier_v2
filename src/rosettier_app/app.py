@@ -561,6 +561,14 @@ def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
     return "box" if len(comparison_df) > 2 else "points"
 
 
+def _groups_eligible_for_boxplot(comparison_df: pd.DataFrame, group_label_column: str = "__compare_group_label__") -> set[str]:
+    """Return group labels that have enough points to render a meaningful boxplot."""
+    if comparison_df.empty or group_label_column not in comparison_df.columns:
+        return set()
+    group_sizes = comparison_df[group_label_column].value_counts(dropna=False)
+    return {str(group) for group, size in group_sizes.items() if int(size) > 2}
+
+
 def _build_feature_comparison_figure(
     *,
     comparison_df: pd.DataFrame,
@@ -573,11 +581,13 @@ def _build_feature_comparison_figure(
     facet_column: str | None,
 ):
     """Build the Plotly figure used by both preview and all export formats."""
-    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
 
     group_label_column = "__compare_group_label__"
     plot_df = comparison_df.copy()
     plot_df[group_label_column] = _build_group_label_column(plot_df, group_columns)
+    plot_df[group_label_column] = plot_df[group_label_column].astype(str)
     plot_df[feature_column] = pd.to_numeric(plot_df[feature_column], errors="coerce")
     plot_df = plot_df.dropna(subset=[group_label_column, feature_column])
     if plot_df.empty:
@@ -588,107 +598,262 @@ def _build_feature_comparison_figure(
     color_arg = color_column if color_column in plot_df.columns else None
     if color_arg:
         plot_df[color_arg] = plot_df[color_arg].fillna("—").astype(str)
+    if facet_arg:
+        plot_df[facet_arg] = plot_df[facet_arg].fillna("—").astype(str)
 
-    hover_data = {feature_column: ":.5g"}
     title_suffix = " + ".join(group_columns)
-    plot_mode = _comparison_plot_mode(plot_df)
+    boxplot_groups = _groups_eligible_for_boxplot(plot_df, group_label_column=group_label_column)
+    plot_mode = "box" if boxplot_groups else "points"
 
-    if plot_mode == "box":
-        fig = px.box(
-            plot_df,
-            x=group_label_column,
-            y=feature_column,
-            color=None,
-            facet_col=facet_arg,
-            points=False,
-            hover_name="well",
-            hover_data=hover_data,
-            category_orders={group_label_column: category_order},
-        )
-        fig.update_traces(
-            selector={"type": "box"},
-            jitter=0.26,
-            pointpos=0,
-            marker={"size": 7, "opacity": 0.80, "line": {"width": 0}},
-            line={"width": 1.0, "color": "#666666"},
-            fillcolor="rgba(0, 0, 0, 0)",
-            whiskerwidth=0.7,
-            boxpoints=False,
-        )
-        fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
-        strip_fig = px.strip(
-            plot_df,
-            x=group_label_column,
-            y=feature_column,
-            color=color_arg,
-            facet_col=facet_arg,
-            hover_name="well",
-            hover_data=hover_data,
-            category_orders={group_label_column: category_order},
-        )
-        strip_fig.update_traces(jitter=0.26, marker={"size": 7, "opacity": 0.80})
-        if color_arg is None:
-            strip_fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
-        for trace in strip_fig.data:
-            fig.add_trace(trace)
+    facet_values = [None]
+    if facet_arg:
+        facet_values = plot_df[facet_arg].drop_duplicates().tolist()
+    fig = make_subplots(
+        rows=1,
+        cols=len(facet_values),
+        subplot_titles=None if facet_values == [None] else [f"{facet_arg}: {value}" for value in facet_values],
+        shared_yaxes=True,
+    )
+
+    if color_arg:
+        unique_color_values = plot_df[color_arg].drop_duplicates().tolist()
+        palette = [
+            "#4c78a8",
+            "#f58518",
+            "#54a24b",
+            "#e45756",
+            "#72b7b2",
+            "#b279a2",
+            "#ff9da6",
+            "#9d755d",
+            "#bab0ab",
+            "#59a14f",
+        ]
+        color_map = {value: palette[idx % len(palette)] for idx, value in enumerate(unique_color_values)}
     else:
-        fig = px.strip(
-            plot_df,
-            x=group_label_column,
-            y=feature_column,
-            color=color_arg,
-            facet_col=facet_arg,
-            hover_name="well",
-            hover_data=hover_data,
-            category_orders={group_label_column: category_order},
+        color_map = {}
+
+    for col_idx, facet_value in enumerate(facet_values, start=1):
+        facet_df = plot_df if facet_value is None else plot_df.loc[plot_df[facet_arg] == facet_value].copy()
+        if facet_df.empty:
+            continue
+
+        box_df = facet_df.loc[facet_df[group_label_column].isin(boxplot_groups)].copy()
+        if not box_df.empty:
+            fig.add_trace(
+                go.Box(
+                    x=box_df[group_label_column],
+                    y=box_df[feature_column],
+                    name="Boxplot",
+                    legendgroup="boxplot",
+                    showlegend=col_idx == 1,
+                    marker={"color": "#6e6e6e"},
+                    line={"color": "#6e6e6e", "width": 1.1},
+                    fillcolor="rgba(110, 110, 110, 0.15)",
+                    boxpoints=False,
+                    hoverinfo="skip",
+                ),
+                row=1,
+                col=col_idx,
+            )
+
+        if color_arg:
+            for color_value in facet_df[color_arg].drop_duplicates().tolist():
+                color_df = facet_df.loc[facet_df[color_arg] == color_value].copy()
+                fig.add_trace(
+                    go.Scatter(
+                        x=color_df[group_label_column],
+                        y=color_df[feature_column],
+                        mode="markers",
+                        name=str(color_value),
+                        legendgroup=f"points_{color_value}",
+                        showlegend=col_idx == 1,
+                        marker={"size": 8, "opacity": 0.85, "color": color_map[str(color_value)]},
+                        customdata=color_df[["well", group_label_column, color_arg]].to_numpy(),
+                        hovertemplate=(
+                            "Well: %{customdata[0]}<br>"
+                            "Group: %{customdata[1]}<br>"
+                            f"{feature_label}: %{{y:.5g}}<br>"
+                            f"{color_arg}: %{{customdata[2]}}<extra></extra>"
+                        ),
+                    ),
+                    row=1,
+                    col=col_idx,
+                )
+        else:
+            fig.add_trace(
+                go.Scatter(
+                    x=facet_df[group_label_column],
+                    y=facet_df[feature_column],
+                    mode="markers",
+                    name="Replicates",
+                    legendgroup="points",
+                    showlegend=False,
+                    marker={"size": 8, "opacity": 0.85, "color": "#4c78a8"},
+                    customdata=facet_df[["well", group_label_column]].to_numpy(),
+                    hovertemplate=(
+                        "Well: %{customdata[0]}<br>"
+                        "Group: %{customdata[1]}<br>"
+                        f"{feature_label}: %{{y:.5g}}<extra></extra>"
+                    ),
+                ),
+                row=1,
+                col=col_idx,
+            )
+
+        fig.update_xaxes(
+            row=1,
+            col=col_idx,
+            categoryorder="array",
+            categoryarray=category_order,
+            tickangle=32,
+            showgrid=False,
         )
-        fig.update_traces(jitter=0.26, marker={"size": 7, "opacity": 0.80})
-        if color_arg is None:
-            fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
 
     fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 10, "r": 10, "t": 56, "b": 110},
+        template="plotly_white",
+        margin={"l": 40, "r": 20, "t": 70, "b": 130},
         legend={"title": color_arg or "", "tracegroupgap": 0},
-        boxmode="group",
         title=f"{signal_name}: {feature_label} by {title_suffix}",
     )
-    fig.update_xaxes(tickangle=32, title=" + ".join(group_columns), showgrid=False)
-    fig.update_yaxes(title=feature_label, showgrid=False)
+    fig.update_xaxes(title=" + ".join(group_columns))
+    fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec")
     if color_arg and plot_df[color_arg].nunique() > 12:
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
         fig.update_layout(title=f"{signal_name}: {feature_label} points by {title_suffix} (<3 wells)")
-    if color_arg:
-        fig.update_traces(
-            customdata=plot_df[["well", group_label_column, color_arg]],
-            hovertemplate=(
-                "Well: %{customdata[0]}<br>"
-                f"Group: %{{customdata[1]}}<br>{feature_label}: %{{y:.5g}}<br>"
-                f"{color_arg}: %{{customdata[2]}}<extra></extra>"
-            ),
-        )
-    else:
-        fig.update_traces(
-            customdata=plot_df[["well", group_label_column]],
-            hovertemplate=(
-                "Well: %{customdata[0]}<br>"
-                "Group: %{customdata[1]}<br>"
-                f"{feature_label}: %{{y:.5g}}<extra></extra>"
-            ),
-        )
     return fig, plot_df
 
 
 def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
-    """Serialize Plotly figure to static image bytes."""
-    return fig.to_image(format=image_format)
+    """Serialize Plotly figure to static image bytes using a matplotlib backend."""
+    if image_format not in {"png", "svg"}:
+        raise ValueError(f"Unsupported image format: {image_format}")
+
+    try:
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError:
+        if hasattr(fig, "to_image"):
+            return fig.to_image(format=image_format)
+        raise RuntimeError("PNG/SVG export requires matplotlib.")
+
+    figure = plt.figure(figsize=(10, 6))
+    axis = figure.add_subplot(1, 1, 1)
+
+    categorical_x = False
+    category_to_index: dict[str, int] = {}
+
+    def _x_values_to_numeric(x_values) -> list[float]:
+        nonlocal categorical_x
+        values = list(x_values) if x_values is not None else []
+        if not values:
+            return []
+        numeric_values: list[float] = []
+        for value in values:
+            if isinstance(value, (int, float, np.number)) and not pd.isna(value):
+                numeric_values.append(float(value))
+                continue
+            categorical_x = True
+            label = str(value)
+            if label not in category_to_index:
+                category_to_index[label] = len(category_to_index)
+            numeric_values.append(float(category_to_index[label]))
+        return numeric_values
+
+    for trace in fig.data:
+        trace_type = str(getattr(trace, "type", "")).lower()
+        trace_name = str(getattr(trace, "name", "") or "")
+        if trace_type == "box":
+            x_values = list(getattr(trace, "x", []) or [])
+            y_values = list(getattr(trace, "y", []) or [])
+            grouped: dict[str, list[float]] = {}
+            for x_value, y_value in zip(x_values, y_values, strict=False):
+                if pd.isna(y_value):
+                    continue
+                label = str(x_value)
+                grouped.setdefault(label, []).append(float(y_value))
+                if label not in category_to_index:
+                    category_to_index[label] = len(category_to_index)
+                categorical_x = True
+            if grouped:
+                labels = list(grouped.keys())
+                positions = [category_to_index[label] for label in labels]
+                axis.boxplot(
+                    [grouped[label] for label in labels],
+                    positions=positions,
+                    widths=0.45,
+                    patch_artist=True,
+                    boxprops={"facecolor": "#dddddd", "edgecolor": "#666666", "linewidth": 1.0},
+                    whiskerprops={"color": "#666666", "linewidth": 1.0},
+                    capprops={"color": "#666666", "linewidth": 1.0},
+                    medianprops={"color": "#444444", "linewidth": 1.2},
+                )
+            continue
+
+        if trace_type == "scatter":
+            x_values = _x_values_to_numeric(getattr(trace, "x", []))
+            y_values = [float(value) for value in list(getattr(trace, "y", []) or [])]
+            if not x_values or not y_values:
+                continue
+
+            mode = str(getattr(trace, "mode", "")).lower()
+            marker = "o" if "markers" in mode else None
+            linestyle = "-" if "lines" in mode else "None"
+            axis.plot(
+                x_values,
+                y_values,
+                linestyle=linestyle,
+                marker=marker,
+                alpha=0.85,
+                markersize=4.8,
+                linewidth=1.1,
+                label=trace_name if trace_name else "_nolegend_",
+            )
+
+    if categorical_x and category_to_index:
+        ordered_labels = sorted(category_to_index.items(), key=lambda pair: pair[1])
+        axis.set_xticks([position for _, position in ordered_labels])
+        axis.set_xticklabels([label for label, _ in ordered_labels], rotation=32, ha="right")
+
+    plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
+    if plot_title:
+        axis.set_title(plot_title)
+    x_axis = getattr(fig.layout, "xaxis", None)
+    y_axis = getattr(fig.layout, "yaxis", None)
+    x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
+    y_axis_title = str(getattr(getattr(y_axis, "title", None), "text", "") or "")
+    if x_axis_title:
+        axis.set_xlabel(x_axis_title)
+    if y_axis_title:
+        axis.set_ylabel(y_axis_title)
+    axis.grid(alpha=0.25)
+    handles, labels = axis.get_legend_handles_labels()
+    if any(label and label != "_nolegend_" for label in labels):
+        axis.legend(loc="best", frameon=False)
+
+    buffer = BytesIO()
+    figure.tight_layout()
+    figure.savefig(buffer, format=image_format, bbox_inches="tight")
+    plt.close(figure)
+    return buffer.getvalue()
+
+
+def _plotly_static_export_status() -> tuple[bool, str | None]:
+    """Return whether matplotlib static image export is available."""
+    try:
+        import matplotlib  # noqa: F401
+        return True, None
+    except Exception:  # pragma: no cover - depends on local runtime
+        return False, "PNG/SVG export requires matplotlib in the app dependencies."
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
     """Render static image download buttons for a Plotly figure."""
+    static_available, unavailable_message = _plotly_static_export_status()
+    if not static_available:
+        st.caption(unavailable_message)
+        return
+
     for image_format, mime_type in [("png", "image/png"), ("svg", "image/svg+xml")]:
         try:
             image_bytes = _plotly_image_bytes(fig, image_format=image_format)

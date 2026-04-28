@@ -6,8 +6,14 @@
 python -m pip install -e ".[app]"
 ```
 
-## Offline Plotly exports (HTML)
+## Plot exports (PNG/SVG)
 
 The Streamlit app exports plots using the same Plotly figure object shown in the preview.
 
-- **HTML** exports are fully offline/self-contained and do not require Chrome or Kaleido.
+- **PNG/SVG** exports use a local matplotlib backend (no Chrome dependency).
+
+Local setup for full app + static export:
+
+```bash
+python -m pip install -e ".[app]"
+```
