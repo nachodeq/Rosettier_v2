@@ -233,3 +233,96 @@ def test_filter_selected_wells_applies_plate_selection():
     )
     out = app._filter_selected_wells(tidy, selected_wells=["A02"])
     assert out["well"].tolist() == ["A02"]
+
+
+def test_resolve_feature_column_prefers_signal_prefixed_name():
+    features = pd.DataFrame({"well": ["A01"], "OD_auc": [1.23], "auc": [9.99]})
+    assert app._resolve_feature_column(features, "OD", "auc") == "OD_auc"
+
+
+def test_prepare_feature_comparison_table_preserves_well_level_replicates():
+    features = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "OD_auc": [1.0, 2.0, 3.0],
+        }
+    )
+    merged = pd.DataFrame(
+        {
+            "well": ["A01", "A01", "A02", "A03"],
+            "time": [0.0, 1.0, 0.0, 0.0],
+            "strain": ["WT", "WT", "WT", "KO"],
+            "RTecnica": ["r1", "r1", "r2", "r1"],
+        }
+    )
+
+    out, missing_count = app._prepare_feature_comparison_table(
+        features_df=features,
+        merged_df=merged,
+        feature_column="OD_auc",
+        group_columns=["strain"],
+        color_column="RTecnica",
+        facet_column=None,
+    )
+
+    assert len(out) == 3
+    assert sorted(out["well"].tolist()) == ["A01", "A02", "A03"]
+    assert missing_count == {"strain": 0}
+
+
+def test_prepare_feature_comparison_table_counts_missing_group_labels():
+    features = pd.DataFrame({"well": ["A01", "A02"], "OD_endpoint": [0.2, 0.3]})
+    merged = pd.DataFrame(
+        {
+            "well": ["A01", "A02"],
+            "time": [0.0, 0.0],
+            "strain": ["WT", None],
+        }
+    )
+
+    out, missing_count = app._prepare_feature_comparison_table(
+        features_df=features,
+        merged_df=merged,
+        feature_column="OD_endpoint",
+        group_columns=["strain"],
+    )
+
+    assert len(out) == 2
+    assert missing_count == {"strain": 1}
+
+
+def test_combine_qc_outputs_for_export_includes_component_labels():
+    qc = {
+        "missing": {
+            "overall": pd.DataFrame({"n_total": [2], "n_missing": [1]}),
+            "per_well": pd.DataFrame({"well": ["A01"], "n_missing": [1]}),
+        },
+        "constant_wells": pd.DataFrame({"well": ["A01"], "is_constant": [True]}),
+        "outlier_wells": pd.DataFrame({"well": ["A02"], "is_outlier": [False]}),
+        "edge_effects": pd.DataFrame({"difference": [0.1]}),
+    }
+
+    out = app._combine_qc_outputs_for_export(qc)
+
+    assert "qc_component" in out.columns
+    assert "qc_scope" in out.columns
+    assert {"missing_values", "constant_wells", "outlier_wells", "edge_effects"} <= set(out["qc_component"])
+
+
+def test_build_group_label_column_supports_multiple_group_columns():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02"],
+            "strain": ["WT", "KO"],
+            "drug": ["none", "drugA"],
+        }
+    )
+
+    out = app._build_group_label_column(comparison, ["strain", "drug"])
+
+    assert out.tolist() == ["strain=WT | drug=none", "strain=KO | drug=drugA"]
+
+
+def test_comparison_plot_mode_uses_points_for_small_samples():
+    comparison = pd.DataFrame({"well": ["A01", "A02"]})
+    assert app._comparison_plot_mode(comparison) == "points"

@@ -474,6 +474,105 @@ _FEATURE_LABELS = {
 }
 
 
+def _resolve_feature_column(features_df: pd.DataFrame, signal_name: str, feature_name: str) -> str | None:
+    """Resolve selected feature to an existing feature column."""
+    normalized_signal_name = str(signal_name).strip() or "OD"
+    preferred = f"{normalized_signal_name}_{feature_name}"
+    if preferred in features_df.columns:
+        return preferred
+    if feature_name in features_df.columns:
+        return feature_name
+    return None
+
+
+def _candidate_replicate_columns(columns: list[str]) -> list[str]:
+    """Return metadata columns that likely describe replicate identity."""
+    replicate_tokens = ("replicate", "replica", "rtecnica", "technical_replicate", "rep")
+    candidates: list[str] = []
+    for column in columns:
+        normalized = str(column).strip().lower()
+        if any(token in normalized for token in replicate_tokens):
+            candidates.append(column)
+    return candidates
+
+
+def _prepare_feature_comparison_table(
+    *,
+    features_df: pd.DataFrame,
+    merged_df: pd.DataFrame | None,
+    feature_column: str,
+    group_columns: list[str],
+    color_column: str | None = None,
+    facet_column: str | None = None,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Build well-level comparison table used for feature boxplots."""
+    comparison_df = features_df[["well", feature_column]].copy()
+    if merged_df is not None:
+        reserved = {"time", "value"}
+        metadata_columns = [column for column in merged_df.columns if column not in reserved]
+        metadata_lookup = (
+            merged_df[metadata_columns]
+            .dropna(subset=["well"])
+            .drop_duplicates(subset=["well"], keep="first")
+            .copy()
+        )
+        comparison_df = comparison_df.merge(metadata_lookup, on="well", how="left")
+
+    for required_col in [*group_columns, color_column, facet_column]:
+        if required_col is not None and required_col not in comparison_df.columns:
+            comparison_df[required_col] = pd.NA
+
+    missing_group_counts = {
+        group_column: int(comparison_df[group_column].isna().sum()) if group_column in comparison_df.columns else len(comparison_df)
+        for group_column in group_columns
+    }
+    return comparison_df, missing_group_counts
+
+
+def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[str]) -> pd.Series:
+    """Create a composite grouping label from one or more metadata columns."""
+    labels = []
+    for _, row in comparison_df.iterrows():
+        parts = []
+        for group_column in group_columns:
+            value = row.get(group_column)
+            value_label = "—" if pd.isna(value) else str(value)
+            parts.append(f"{group_column}={value_label}")
+        labels.append(" | ".join(parts))
+    return pd.Series(labels, index=comparison_df.index)
+
+
+def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
+    """Return plot mode: box for >=3 rows, points for <3 rows."""
+    return "box" if len(comparison_df) >= 3 else "points"
+
+
+def _combine_qc_outputs_for_export(qc: dict) -> pd.DataFrame:
+    """Combine QC outputs into one tidy export table."""
+    component_frames: list[pd.DataFrame] = []
+
+    missing_bundle = qc.get("missing")
+    if isinstance(missing_bundle, dict):
+        for scope, scope_df in missing_bundle.items():
+            if isinstance(scope_df, pd.DataFrame):
+                frame = scope_df.copy()
+                frame.insert(0, "qc_scope", scope)
+                frame.insert(0, "qc_component", "missing_values")
+                component_frames.append(frame)
+
+    for component in ["constant_wells", "outlier_wells", "edge_effects"]:
+        component_df = qc.get(component)
+        if isinstance(component_df, pd.DataFrame):
+            frame = component_df.copy()
+            frame.insert(0, "qc_scope", "summary")
+            frame.insert(0, "qc_component", component)
+            component_frames.append(frame)
+
+    if not component_frames:
+        return pd.DataFrame(columns=["qc_component", "qc_scope"])
+    return pd.concat(component_frames, ignore_index=True, sort=False)
+
+
 def _filter_tidy_by_time_window(
     tidy_df: pd.DataFrame,
     *,
@@ -784,6 +883,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
         return
 
     signal_labels = [str(payload["signal_name"]) for payload in signal_payloads]
+    rendered_signal_results: list[dict[str, object]] = []
     signal_tabs = st.tabs(signal_labels)
     for signal_tab, payload in zip(signal_tabs, signal_payloads, strict=False):
         with signal_tab:
@@ -1008,30 +1108,220 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     on_click="ignore",
                 )
             if qc is not None:
+                qc_export_df = _combine_qc_outputs_for_export(qc)
                 st.download_button(
-                    label="Download QC missing overall (CSV)",
-                    data=qc["missing"]["overall"].to_csv(index=False),
-                    file_name=f"rosettier_qc_missing_overall_{signal_slug}.csv",
+                    label="Download QC summary",
+                    data=qc_export_df.to_csv(index=False),
+                    file_name=f"rosettier_qc_summary_{signal_slug}.csv",
                     mime="text/csv",
-                    key=f"download_qc_missing_overall_csv_{signal_key_slug}",
+                    key=f"download_qc_summary_csv_{signal_key_slug}",
                     on_click="ignore",
                 )
-                st.download_button(
-                    label="Download QC constant wells (CSV)",
-                    data=qc["constant_wells"].to_csv(index=False),
-                    file_name=f"rosettier_qc_constant_wells_{signal_slug}.csv",
-                    mime="text/csv",
-                    key=f"download_qc_constant_wells_csv_{signal_key_slug}",
-                    on_click="ignore",
-                )
-                st.download_button(
-                    label="Download QC outlier wells (CSV)",
-                    data=qc["outlier_wells"].to_csv(index=False),
-                    file_name=f"rosettier_qc_outlier_wells_{signal_slug}.csv",
-                    mime="text/csv",
-                    key=f"download_qc_outlier_wells_csv_{signal_key_slug}",
-                    on_click="ignore",
-                )
+
+            rendered_signal_results.append(
+                {
+                    "signal_name": signal_name,
+                    "signal_slug": signal_slug,
+                    "features_df": features_df,
+                    "merged_df": merged_df,
+                }
+            )
+
+    st.markdown("### Compare features")
+    available_comparison = [
+        signal_result
+        for signal_result in rendered_signal_results
+        if isinstance(signal_result.get("features_df"), pd.DataFrame)
+        and signal_result["features_df"] is not None
+        and signal_result["features_df"].shape[1] > 3
+    ]
+    if not available_comparison:
+        st.info("No extracted feature tables are available yet for comparison plotting.")
+        return
+
+    comparison_signal_names = [str(signal_result["signal_name"]) for signal_result in available_comparison]
+    selected_signal_name = st.selectbox(
+        "Signal",
+        options=comparison_signal_names,
+        index=0,
+        key="compare_features_signal",
+    )
+    selected_signal = next(
+        signal_result for signal_result in available_comparison if str(signal_result["signal_name"]) == selected_signal_name
+    )
+    selected_signal_slug = str(selected_signal["signal_slug"])
+    selected_features_df = selected_signal["features_df"]
+    selected_merged_df = selected_signal["merged_df"]
+
+    selectable_features: list[tuple[str, str]] = []
+    for feature_name in ["auc", "endpoint", "max_slope", "time_to_threshold"]:
+        feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
+        if feature_column is not None:
+            selectable_features.append((feature_name, feature_column))
+    if not selectable_features:
+        st.info("No selectable feature columns were found for this signal.")
+        return
+
+    feature_lookup = {feature_name: feature_column for feature_name, feature_column in selectable_features}
+    selected_feature_name = st.selectbox(
+        "Feature",
+        options=[feature_name for feature_name, _ in selectable_features],
+        format_func=lambda feature: _FEATURE_LABELS.get(feature, feature),
+        key="compare_features_feature_name",
+    )
+    selected_feature_column = feature_lookup[selected_feature_name]
+
+    metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
+    if not metadata_columns:
+        st.info("Comparison plotting requires merged Rosetta metadata columns.")
+        return
+
+    selected_group_columns = st.multiselect(
+        "Grouping columns",
+        options=metadata_columns,
+        default=[metadata_columns[0]],
+        key="compare_features_group_columns",
+        help="Select one or more metadata columns to define groups.",
+    )
+    if not selected_group_columns:
+        st.info("Select at least one grouping column.")
+        return
+    selected_color_column = st.selectbox(
+        "Color column (optional)",
+        options=["None", *metadata_columns],
+        index=0,
+        key="compare_features_color_column",
+    )
+    if selected_color_column == "None":
+        selected_color_column = None
+    selected_facet_column = st.selectbox(
+        "Facet column (optional)",
+        options=["None", *metadata_columns],
+        index=0,
+        key="compare_features_facet_column",
+    )
+    if selected_facet_column == "None":
+        selected_facet_column = None
+
+    comparison_df, missing_group_counts = _prepare_feature_comparison_table(
+        features_df=selected_features_df,
+        merged_df=selected_merged_df,
+        feature_column=selected_feature_column,
+        group_columns=selected_group_columns,
+        color_column=selected_color_column,
+        facet_column=selected_facet_column,
+    )
+    for group_column, missing_group_count in missing_group_counts.items():
+        if missing_group_count > 0:
+            st.warning(f"Grouping column '{group_column}' has {missing_group_count} well(s) with missing labels.")
+    comparison_df = comparison_df.copy()
+    group_label_column = "__compare_group_label__"
+    comparison_df[group_label_column] = _build_group_label_column(comparison_df, selected_group_columns)
+    category_count = comparison_df[group_label_column].dropna().astype(str).nunique()
+    if category_count > 20:
+        st.warning(
+            f"Selected grouping has {category_count} categories; the plot may be crowded."
+        )
+
+    replicate_columns = _candidate_replicate_columns(metadata_columns)
+    hover_columns = [*selected_group_columns]
+    for optional_column in [selected_color_column, selected_facet_column, *replicate_columns]:
+        if optional_column and optional_column in comparison_df.columns and optional_column not in hover_columns:
+            hover_columns.append(optional_column)
+
+    import plotly.express as px
+
+    hover_data = {selected_feature_column: ":.5g"}
+    hover_data.update({column: True for column in hover_columns})
+    plot_mode = _comparison_plot_mode(comparison_df)
+    if plot_mode == "box":
+        fig = px.box(
+            comparison_df,
+            x=group_label_column,
+            y=selected_feature_column,
+            color=selected_color_column,
+            facet_col=selected_facet_column,
+            points="all",
+            hover_name="well",
+            hover_data=hover_data,
+            labels={
+                group_label_column: " | ".join(selected_group_columns),
+                selected_feature_column: _FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+            },
+            title=(
+                f"{selected_signal_name}: {_FEATURE_LABELS.get(selected_feature_name, selected_feature_name)} "
+                f"by {' + '.join(selected_group_columns)}"
+            ),
+        )
+        fig.update_traces(jitter=0.35, pointpos=0.0, marker={"size": 7, "opacity": 0.75})
+        fig.update_layout(boxmode="group")
+    else:
+        fig = px.strip(
+            comparison_df,
+            x=group_label_column,
+            y=selected_feature_column,
+            color=selected_color_column,
+            facet_col=selected_facet_column,
+            hover_name="well",
+            hover_data=hover_data,
+            labels={
+                group_label_column: " | ".join(selected_group_columns),
+                selected_feature_column: _FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+            },
+            title=(
+                f"{selected_signal_name}: {_FEATURE_LABELS.get(selected_feature_name, selected_feature_name)} "
+                f"points by {' + '.join(selected_group_columns)} (<3 wells)"
+            ),
+        )
+        fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
+    st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
+
+    image_col1, image_col2 = st.columns(2)
+    with image_col1:
+        try:
+            png_bytes = fig.to_image(format="png")
+            st.download_button(
+                label="Download plot (PNG)",
+                data=png_bytes,
+                file_name=(
+                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+                    f"by_{'_'.join(selected_group_columns)}.png"
+                ),
+                mime="image/png",
+                key=f"download_compare_plot_png_{selected_signal_slug}",
+                on_click="ignore",
+            )
+        except Exception as exc:  # pragma: no cover - depends on runtime image backend
+            st.warning(f"PNG export unavailable in this environment: {exc}")
+    with image_col2:
+        try:
+            svg_bytes = fig.to_image(format="svg")
+            st.download_button(
+                label="Download plot (SVG)",
+                data=svg_bytes,
+                file_name=(
+                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+                    f"by_{'_'.join(selected_group_columns)}.svg"
+                ),
+                mime="image/svg+xml",
+                key=f"download_compare_plot_svg_{selected_signal_slug}",
+                on_click="ignore",
+            )
+        except Exception as exc:  # pragma: no cover - depends on runtime image backend
+            st.warning(f"SVG export unavailable in this environment: {exc}")
+
+    st.caption("Comparison table used for plotting")
+    st.dataframe(comparison_df, use_container_width=True)
+    st.download_button(
+        label="Download comparison table (CSV)",
+        data=comparison_df.to_csv(index=False),
+        file_name=(
+            f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{'_'.join(selected_group_columns)}.csv"
+        ),
+        mime="text/csv",
+        key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{'_'.join(selected_group_columns)}",
+        on_click="ignore",
+    )
 
 
 def main() -> None:
