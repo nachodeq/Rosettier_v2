@@ -725,20 +725,6 @@ def _metadata_columns_for_raw_curves(merged_df: pd.DataFrame | None) -> list[str
     return [column for column in merged_df.columns if column not in reserved]
 
 
-def _default_group_variable_index(metadata_columns: list[str]) -> int:
-    """Choose a sensible default grouping variable, preferring plate/date-like fields."""
-    if not metadata_columns:
-        return 0
-
-    priority_tokens = ("plate", "fecha", "date")
-    normalized_columns = [str(column).strip().lower() for column in metadata_columns]
-    for token in priority_tokens:
-        for idx, normalized_column in enumerate(normalized_columns):
-            if token in normalized_column:
-                return idx
-    return 0
-
-
 def _prepare_raw_curve_plot_df(
     tidy_df: pd.DataFrame,
     wells_to_plot: list[str],
@@ -1318,17 +1304,10 @@ def _render_analyze_data(st, plate_size: int) -> None:
         st.info("Comparison plotting requires merged Rosetta metadata columns.")
         return
 
-    quick_group_column = st.selectbox(
-        "Grouping variable (quick select)",
-        options=metadata_columns,
-        index=_default_group_variable_index(metadata_columns),
-        key="compare_features_quick_group_column",
-        help="Quickly choose one variable to group by (e.g., plate or date).",
-    )
     selected_group_columns = st.multiselect(
         "Grouping columns",
         options=metadata_columns,
-        default=[quick_group_column],
+        default=[],
         key="compare_features_group_columns",
         help="Select one or more metadata columns to define groups.",
     )
