@@ -1,3 +1,7 @@
+import json
+from io import BytesIO
+import zipfile
+
 import pandas as pd
 import pytest
 
@@ -423,3 +427,71 @@ def test_comparison_signal_options_disambiguate_duplicate_signal_names():
     assert option_map[options[0]]["label"] == "OD"
     assert option_map[options[1]]["label"] == "OD (2)"
     assert option_map[options[2]]["label"] == "GFP"
+
+
+def test_build_analysis_bundle_zip_includes_manifest_and_signal_exports():
+    signal_results = [
+        {
+            "signal_name": "OD",
+            "signal_slug": "OD",
+            "tidy_df": pd.DataFrame({"well": ["A01"], "time": [0.0], "OD": [0.1]}),
+            "merged_df": pd.DataFrame({"well": ["A01"], "time": [0.0], "OD": [0.1], "strain": ["WT"]}),
+            "features_df": pd.DataFrame({"well": ["A01"], "row": ["A"], "column": [1], "OD_auc": [1.23]}),
+            "qc_export_df": pd.DataFrame({"qc_component": ["missing_values"], "qc_scope": ["overall"]}),
+            "raw_curve_fig": None,
+        }
+    ]
+
+    bundle_bytes = app._build_analysis_bundle_zip(
+        signal_results=signal_results,
+        plate_size=96,
+        config={"enable_time_filter": True, "min_time": 0.0, "max_time": 120.0, "selected_features": ["auc"]},
+        comparison_df=None,
+        comparison_name=None,
+        comparison_fig=None,
+    )
+
+    with zipfile.ZipFile(BytesIO(bundle_bytes), mode="r") as bundle:
+        names = set(bundle.namelist())
+        assert "signals/OD/parsed_tidy.csv" in names
+        assert "signals/OD/merged.csv" in names
+        assert "signals/OD/features.csv" in names
+        assert "signals/OD/qc_summary.csv" in names
+        assert "manifest.json" in names
+        manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+        assert manifest["signal_names"] == ["OD"]
+        assert manifest["plate_size"] == 96
+        assert manifest["time_filtering"]["enabled"] is True
+        assert manifest["selected_features"] == ["auc"]
+        assert "timestamp" in manifest
+
+
+def test_build_analysis_bundle_zip_includes_comparison_table_and_plots_when_available():
+    class DummyFigure:
+        def to_html(self, **kwargs):
+            return "<html><body>plot</body></html>"
+
+    bundle_bytes = app._build_analysis_bundle_zip(
+        signal_results=[
+            {
+                "signal_name": "OD",
+                "signal_slug": "OD",
+                "tidy_df": pd.DataFrame({"well": ["A01"]}),
+                "merged_df": None,
+                "features_df": pd.DataFrame({"well": ["A01"], "row": ["A"], "column": [1], "OD_auc": [1.23]}),
+                "qc_export_df": None,
+                "raw_curve_fig": DummyFigure(),
+            }
+        ],
+        plate_size=96,
+        config={},
+        comparison_df=pd.DataFrame({"well": ["A01"], "OD_auc": [1.23]}),
+        comparison_name="compare_od_auc",
+        comparison_fig=DummyFigure(),
+    )
+
+    with zipfile.ZipFile(BytesIO(bundle_bytes), mode="r") as bundle:
+        names = set(bundle.namelist())
+        assert "signals/OD/raw_curves_plot.html" in names
+        assert "comparison/compare_od_auc.csv" in names
+        assert "comparison/comparison_plot.html" in names
