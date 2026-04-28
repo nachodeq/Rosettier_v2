@@ -321,7 +321,7 @@ def test_build_group_label_column_supports_multiple_group_columns():
 
     out = app._build_group_label_column(comparison, ["strain", "drug"])
 
-    assert out.tolist() == ["strain=WT | drug=none", "strain=KO | drug=drugA"]
+    assert out.tolist() == ["WT | none", "KO | drugA"]
 
 
 def test_comparison_plot_mode_uses_points_for_single_sample():
@@ -329,67 +329,65 @@ def test_comparison_plot_mode_uses_points_for_single_sample():
     assert app._comparison_plot_mode(comparison) == "points"
 
 
-def test_build_static_comparison_plot_bytes_returns_png_and_svg_bytes():
-    pytest.importorskip("matplotlib")
-
+def test_build_feature_comparison_figure_returns_plotly_figure():
     comparison = pd.DataFrame(
         {
-            "__compare_group_label__": ["g1", "g1", "g2", "g2"],
+            "well": ["A01", "A02", "A03", "A04"],
+            "strain": ["WT", "WT", "KO", "KO"],
             "feature_auc": [1.0, 2.0, 3.0, 4.0],
-            "color_label": ["A", "B", "A", "B"],
         }
     )
 
-    png_bytes = app._build_static_comparison_plot_bytes(
+    fig, plot_df = app._build_feature_comparison_figure(
         comparison_df=comparison,
-        group_label_column="__compare_group_label__",
+        group_columns=["strain"],
         feature_column="feature_auc",
-        title="Test Plot",
-        color_column="color_label",
-        facet_column=None,
-        x_axis_label="strain",
-        format="png",
-    )
-    svg_bytes = app._build_static_comparison_plot_bytes(
-        comparison_df=comparison,
-        group_label_column="__compare_group_label__",
-        feature_column="feature_auc",
-        title="Test Plot",
-        color_column="color_label",
-        facet_column=None,
-        x_axis_label="strain",
-        format="svg",
-    )
-
-    assert len(png_bytes) > 100
-    assert svg_bytes.startswith(b"<?xml") or svg_bytes.lstrip().startswith(b"<svg")
-
-
-def test_build_static_comparison_plot_bytes_preserves_facets_and_axis_label():
-    pytest.importorskip("matplotlib")
-
-    comparison = pd.DataFrame(
-        {
-            "__compare_group_label__": ["g1", "g2", "g1", "g2"],
-            "feature_auc": [1.0, 2.0, 3.0, 4.0],
-            "batch": ["b1", "b1", "b2", "b2"],
-        }
-    )
-    svg_bytes = app._build_static_comparison_plot_bytes(
-        comparison_df=comparison,
-        group_label_column="__compare_group_label__",
-        feature_column="feature_auc",
-        title="Test Plot",
+        feature_label="AUC",
+        signal_name="OD",
+        feature_name="auc",
         color_column=None,
-        facet_column="batch",
-        x_axis_label="strain | drug",
-        format="svg",
+        facet_column=None,
     )
 
-    svg_text = svg_bytes.decode("utf-8", errors="ignore")
-    assert "batch=b1" in svg_text
-    assert "batch=b2" in svg_text
-    assert "strain | drug" in svg_text
+    assert fig.__class__.__name__ == "Figure"
+    assert "__compare_group_label__" in plot_df.columns
+
+
+def test_build_feature_comparison_figure_includes_color_column_legend_entries():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "A04"],
+            "strain": ["WT", "WT", "KO", "KO"],
+            "replicate": ["r1", "r2", "r1", "r2"],
+            "feature_auc": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    fig, _ = app._build_feature_comparison_figure(
+        comparison_df=comparison,
+        group_columns=["strain"],
+        feature_column="feature_auc",
+        feature_label="AUC",
+        signal_name="OD",
+        feature_name="auc",
+        color_column="replicate",
+        facet_column=None,
+    )
+
+    trace_names = {str(getattr(trace, "name", "")) for trace in fig.data}
+    assert "r1" in trace_names
+    assert "r2" in trace_names
+
+
+def test_try_plotly_static_export_bytes_handles_kaleido_chrome_failure():
+    class DummyFigure:
+        def to_image(self, *, format, engine):
+            raise RuntimeError("Kaleido requires Google Chrome to be installed.")
+
+    image, warning = app._try_plotly_static_export_bytes(DummyFigure(), format="png")
+
+    assert image is None
+    assert warning == "PNG/SVG export requires Kaleido with Chrome installed. HTML export is available."
 
 
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
