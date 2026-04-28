@@ -543,7 +543,15 @@ def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[s
 
 
 def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
-    """Return plot mode: box for >=2 rows, points for <2 rows."""
+    """Return plot mode: box when at least one group has replicates, else points."""
+    if comparison_df.empty:
+        return "points"
+
+    group_label_column = "__compare_group_label__"
+    if group_label_column in comparison_df.columns:
+        group_sizes = comparison_df[group_label_column].value_counts(dropna=False)
+        return "box" if int(group_sizes.max()) >= 2 else "points"
+
     return "box" if len(comparison_df) >= 2 else "points"
 
 
@@ -584,43 +592,23 @@ def _build_feature_comparison_figure(
             plot_df,
             x=group_label_column,
             y=feature_column,
+            color=color_arg,
             facet_col=facet_arg,
-            points=False,
+            points="all",
             hover_name="well",
             hover_data=hover_data,
             category_orders={group_label_column: category_order},
         )
         fig.update_traces(
             selector={"type": "box"},
-            marker={"size": 5, "opacity": 0.5, "color": "#4c78a8"},
+            jitter=0.26,
+            pointpos=0,
+            marker={"size": 7, "opacity": 0.80, "line": {"width": 0}},
             line={"width": 1.0, "color": "#666666"},
             fillcolor="rgba(170, 170, 170, 0.20)",
-            showlegend=False,
-        )
-        strip_fig = px.strip(
-            plot_df,
-            x=group_label_column,
-            y=feature_column,
-            color=color_arg,
-            facet_col=facet_arg,
-            hover_name="well",
-            hover_data=hover_data,
-            category_orders={group_label_column: category_order},
-        )
-        strip_fig.update_traces(
-            jitter=0.26,
-            marker={"size": 7, "opacity": 0.80, "line": {"width": 0}},
         )
         if color_arg is None:
-            strip_fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
-        seen_legend_names: set[str] = set()
-        for trace in strip_fig.data:
-            trace_name = str(getattr(trace, "name", ""))
-            if trace_name and trace_name in seen_legend_names:
-                trace.showlegend = False
-            elif trace_name:
-                seen_legend_names.add(trace_name)
-            fig.add_trace(trace)
+            fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
     else:
         fig = px.strip(
             plot_df,

@@ -329,6 +329,26 @@ def test_comparison_plot_mode_uses_points_for_single_sample():
     assert app._comparison_plot_mode(comparison) == "points"
 
 
+def test_comparison_plot_mode_uses_points_when_all_groups_are_singletons():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "__compare_group_label__": ["WT", "KO", "mut"],
+        }
+    )
+    assert app._comparison_plot_mode(comparison) == "points"
+
+
+def test_comparison_plot_mode_uses_box_when_any_group_has_replicates():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "__compare_group_label__": ["WT", "WT", "KO"],
+        }
+    )
+    assert app._comparison_plot_mode(comparison) == "box"
+
+
 def test_build_feature_comparison_figure_returns_plotly_figure():
     comparison = pd.DataFrame(
         {
