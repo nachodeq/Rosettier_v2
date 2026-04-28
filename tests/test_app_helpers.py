@@ -567,6 +567,7 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
     captions: list[str] = []
+    images: list[tuple[bytes, str]] = []
 
     class DummyFigure:
         def to_image(self, **kwargs):
@@ -582,6 +583,9 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
 
         def caption(self, text):
             captions.append(str(text))
+
+        def image(self, image, caption=None, use_container_width=False):
+            images.append((bytes(image), str(caption)))
 
     original_status = app._plotly_static_export_status
     app._plotly_static_export_status = lambda: (True, None)
@@ -600,7 +604,8 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     assert calls[0]["file_name"] == "my_plot.png"
     assert calls[1]["label"] == "Download plot (SVG)"
     assert calls[1]["file_name"] == "my_plot.svg"
-    assert captions == []
+    assert images == [(b"png-bytes", "my_plot.png")]
+    assert captions == ["Export preview (PNG): this is exactly what the app will download."]
 
 
 def test_render_plot_download_buttons_shows_friendly_message_when_static_export_unavailable():
@@ -616,6 +621,9 @@ def test_render_plot_download_buttons_shows_friendly_message_when_static_export_
 
         def caption(self, text):
             captions.append(str(text))
+
+        def image(self, image, caption=None, use_container_width=False):
+            return None
 
     original_status = app._plotly_static_export_status
     app._plotly_static_export_status = lambda: (False, "PNG/SVG export requires matplotlib in the app dependencies.")
