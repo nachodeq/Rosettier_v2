@@ -598,9 +598,9 @@ def _build_feature_comparison_figure(
             plot_df,
             x=group_label_column,
             y=feature_column,
-            color=color_arg,
+            color=None,
             facet_col=facet_arg,
-            points="all",
+            points=False,
             hover_name="well",
             hover_data=hover_data,
             category_orders={group_label_column: category_order},
@@ -613,10 +613,24 @@ def _build_feature_comparison_figure(
             line={"width": 1.0, "color": "#666666"},
             fillcolor="rgba(0, 0, 0, 0)",
             whiskerwidth=0.7,
-            boxpoints="all",
+            boxpoints=False,
         )
+        fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
+        strip_fig = px.strip(
+            plot_df,
+            x=group_label_column,
+            y=feature_column,
+            color=color_arg,
+            facet_col=facet_arg,
+            hover_name="well",
+            hover_data=hover_data,
+            category_orders={group_label_column: category_order},
+        )
+        strip_fig.update_traces(jitter=0.26, marker={"size": 7, "opacity": 0.80})
         if color_arg is None:
-            fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
+            strip_fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
+        for trace in strip_fig.data:
+            fig.add_trace(trace)
     else:
         fig = px.strip(
             plot_df,
@@ -668,21 +682,27 @@ def _build_feature_comparison_figure(
     return fig, plot_df
 
 
-def _plotly_html_bytes(fig) -> bytes:
-    """Serialize Plotly figure to self-contained HTML bytes for offline downloads."""
-    return fig.to_html(full_html=True, include_plotlyjs=True).encode("utf-8")
+def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
+    """Serialize Plotly figure to static image bytes."""
+    return fig.to_image(format=image_format)
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
-    """Render HTML download button for a Plotly figure."""
-    st.download_button(
-        label="Download plot (HTML)",
-        data=_plotly_html_bytes(fig),
-        file_name=f"{filename_stem}.html",
-        mime="text/html",
-        key=f"{key_prefix}_html",
-        on_click="ignore",
-    )
+    """Render static image download buttons for a Plotly figure."""
+    for image_format, mime_type in [("png", "image/png"), ("svg", "image/svg+xml")]:
+        try:
+            image_bytes = _plotly_image_bytes(fig, image_format=image_format)
+        except Exception:  # pragma: no cover - depends on runtime image backend
+            st.caption(f"Plot export ({image_format.upper()}) unavailable in this environment.")
+            continue
+        st.download_button(
+            label=f"Download plot ({image_format.upper()})",
+            data=image_bytes,
+            file_name=f"{filename_stem}.{image_format}",
+            mime=mime_type,
+            key=f"{key_prefix}_{image_format}",
+            on_click="ignore",
+        )
 
 
 def _comparison_signal_options(available_comparison: list[dict[str, object]]) -> tuple[list[str], dict[str, dict[str, object]]]:
@@ -898,13 +918,27 @@ def _build_analysis_bundle_zip(
 
             raw_curve_fig = signal_result.get("raw_curve_fig")
             if raw_curve_fig is not None:
-                bundle.writestr(f"{signal_dir}/raw_curves_plot.html", _plotly_html_bytes(raw_curve_fig))
+                for image_format in ["png", "svg"]:
+                    try:
+                        bundle.writestr(
+                            f"{signal_dir}/raw_curves_plot.{image_format}",
+                            _plotly_image_bytes(raw_curve_fig, image_format=image_format),
+                        )
+                    except Exception:
+                        continue
 
         if isinstance(comparison_df, pd.DataFrame) and not comparison_df.empty:
             table_name = comparison_name or "comparison_table"
             bundle.writestr(f"comparison/{table_name}.csv", comparison_df.to_csv(index=False))
         if comparison_fig is not None:
-            bundle.writestr("comparison/comparison_plot.html", _plotly_html_bytes(comparison_fig))
+            for image_format in ["png", "svg"]:
+                try:
+                    bundle.writestr(
+                        f"comparison/comparison_plot.{image_format}",
+                        _plotly_image_bytes(comparison_fig, image_format=image_format),
+                    )
+                except Exception:
+                    continue
 
         manifest_json = json.dumps(manifest, indent=2)
         bundle.writestr("manifest.json", manifest_json)
