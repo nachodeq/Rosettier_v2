@@ -484,6 +484,9 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
             fmt = kwargs["format"]
             return f"{fmt}-bytes".encode("utf-8")
 
+        def to_html(self, **kwargs):
+            return "<html></html>"
+
     class DummySt:
         def download_button(self, **kwargs):
             calls.append(kwargs)

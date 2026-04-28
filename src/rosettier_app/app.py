@@ -847,6 +847,22 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
         return False, "PNG/SVG export requires matplotlib in the app dependencies."
 
 
+def _plotly_static_export_status() -> tuple[bool, str | None]:
+    """Return whether static image export is available, and a user-facing message when unavailable."""
+    import plotly.graph_objects as go
+
+    try:
+        go.Figure().to_image(format="png")
+        return True, None
+    except Exception as exc:  # pragma: no cover - depends on local runtime
+        message = str(exc).lower()
+        if "chrome" in message:
+            return False, "PNG/SVG export requires Kaleido with a local Chrome installation (run: plotly_get_chrome)."
+        if "kaleido" in message:
+            return False, "PNG/SVG export requires Kaleido plus Chrome (install with: pip install kaleido, then run: plotly_get_chrome)."
+        return False, "PNG/SVG export is unavailable in this environment. Install Kaleido and Chrome to enable static image export."
+
+
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
     """Render static image download buttons for a Plotly figure."""
     static_available, unavailable_message = _plotly_static_export_status()
