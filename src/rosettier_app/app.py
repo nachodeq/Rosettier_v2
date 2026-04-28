@@ -178,6 +178,11 @@ def _selected_wells_from_event(event: dict | None, rosetta_df: pd.DataFrame) -> 
     return wells
 
 
+def _event_contains_selection_payload(event: dict | None) -> bool:
+    """Return whether event includes a selection payload (including empty selection)."""
+    return bool(event and ("selection" in event))
+
+
 def _init_rosetta_state(st, plate_size: int) -> None:
     """Initialize stable session state for Create Rosetta mode."""
     _init_rosetta_editor_state(st, state_prefix="rosetta", plate_size=plate_size)
@@ -296,7 +301,7 @@ def _render_rosetta_editor(
     fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=selected_viz)
     event = st.plotly_chart(fig, use_container_width=True, key=f"{widget_prefix}_plate", on_select="rerun")
     just_selected = _selected_wells_from_event(event, rosetta_df)
-    if just_selected:
+    if _event_contains_selection_payload(event):
         st.session_state[selected_key] = sorted(set(just_selected))
         selected_wells = st.session_state[selected_key]
 
