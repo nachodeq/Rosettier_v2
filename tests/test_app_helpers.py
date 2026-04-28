@@ -260,14 +260,14 @@ def test_prepare_feature_comparison_table_preserves_well_level_replicates():
         features_df=features,
         merged_df=merged,
         feature_column="OD_auc",
-        group_column="strain",
+        group_columns=["strain"],
         color_column="RTecnica",
         facet_column=None,
     )
 
     assert len(out) == 3
     assert sorted(out["well"].tolist()) == ["A01", "A02", "A03"]
-    assert missing_count == 0
+    assert missing_count == {"strain": 0}
 
 
 def test_prepare_feature_comparison_table_counts_missing_group_labels():
@@ -284,11 +284,11 @@ def test_prepare_feature_comparison_table_counts_missing_group_labels():
         features_df=features,
         merged_df=merged,
         feature_column="OD_endpoint",
-        group_column="strain",
+        group_columns=["strain"],
     )
 
     assert len(out) == 2
-    assert missing_count == 1
+    assert missing_count == {"strain": 1}
 
 
 def test_combine_qc_outputs_for_export_includes_component_labels():
@@ -307,3 +307,22 @@ def test_combine_qc_outputs_for_export_includes_component_labels():
     assert "qc_component" in out.columns
     assert "qc_scope" in out.columns
     assert {"missing_values", "constant_wells", "outlier_wells", "edge_effects"} <= set(out["qc_component"])
+
+
+def test_build_group_label_column_supports_multiple_group_columns():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02"],
+            "strain": ["WT", "KO"],
+            "drug": ["none", "drugA"],
+        }
+    )
+
+    out = app._build_group_label_column(comparison, ["strain", "drug"])
+
+    assert out.tolist() == ["strain=WT | drug=none", "strain=KO | drug=drugA"]
+
+
+def test_comparison_plot_mode_uses_points_for_small_samples():
+    comparison = pd.DataFrame({"well": ["A01", "A02"]})
+    assert app._comparison_plot_mode(comparison) == "points"

@@ -501,10 +501,10 @@ def _prepare_feature_comparison_table(
     features_df: pd.DataFrame,
     merged_df: pd.DataFrame | None,
     feature_column: str,
-    group_column: str,
+    group_columns: list[str],
     color_column: str | None = None,
     facet_column: str | None = None,
-) -> tuple[pd.DataFrame, int]:
+) -> tuple[pd.DataFrame, dict[str, int]]:
     """Build well-level comparison table used for feature boxplots."""
     comparison_df = features_df[["well", feature_column]].copy()
     if merged_df is not None:
@@ -518,12 +518,33 @@ def _prepare_feature_comparison_table(
         )
         comparison_df = comparison_df.merge(metadata_lookup, on="well", how="left")
 
-    for required_col in [group_column, color_column, facet_column]:
+    for required_col in [*group_columns, color_column, facet_column]:
         if required_col is not None and required_col not in comparison_df.columns:
             comparison_df[required_col] = pd.NA
 
-    missing_group_count = int(comparison_df[group_column].isna().sum()) if group_column in comparison_df.columns else len(comparison_df)
-    return comparison_df, missing_group_count
+    missing_group_counts = {
+        group_column: int(comparison_df[group_column].isna().sum()) if group_column in comparison_df.columns else len(comparison_df)
+        for group_column in group_columns
+    }
+    return comparison_df, missing_group_counts
+
+
+def _build_group_label_column(comparison_df: pd.DataFrame, group_columns: list[str]) -> pd.Series:
+    """Create a composite grouping label from one or more metadata columns."""
+    labels = []
+    for _, row in comparison_df.iterrows():
+        parts = []
+        for group_column in group_columns:
+            value = row.get(group_column)
+            value_label = "—" if pd.isna(value) else str(value)
+            parts.append(f"{group_column}={value_label}")
+        labels.append(" | ".join(parts))
+    return pd.Series(labels, index=comparison_df.index)
+
+
+def _comparison_plot_mode(comparison_df: pd.DataFrame) -> str:
+    """Return plot mode: box for >=3 rows, points for <3 rows."""
+    return "box" if len(comparison_df) >= 3 else "points"
 
 
 def _combine_qc_outputs_for_export(qc: dict) -> pd.DataFrame:
@@ -1155,11 +1176,16 @@ def _render_analyze_data(st, plate_size: int) -> None:
         st.info("Comparison plotting requires merged Rosetta metadata columns.")
         return
 
-    selected_group_column = st.selectbox(
-        "Grouping column",
+    selected_group_columns = st.multiselect(
+        "Grouping columns",
         options=metadata_columns,
-        key="compare_features_group_column",
+        default=[metadata_columns[0]],
+        key="compare_features_group_columns",
+        help="Select one or more metadata columns to define groups.",
     )
+    if not selected_group_columns:
+        st.info("Select at least one grouping column.")
+        return
     selected_color_column = st.selectbox(
         "Color column (optional)",
         options=["None", *metadata_columns],
@@ -1177,26 +1203,28 @@ def _render_analyze_data(st, plate_size: int) -> None:
     if selected_facet_column == "None":
         selected_facet_column = None
 
-    comparison_df, missing_group_count = _prepare_feature_comparison_table(
+    comparison_df, missing_group_counts = _prepare_feature_comparison_table(
         features_df=selected_features_df,
         merged_df=selected_merged_df,
         feature_column=selected_feature_column,
-        group_column=selected_group_column,
+        group_columns=selected_group_columns,
         color_column=selected_color_column,
         facet_column=selected_facet_column,
     )
-    if missing_group_count > 0:
-        st.warning(
-            f"Grouping column '{selected_group_column}' has {missing_group_count} well(s) with missing labels."
-        )
-    category_count = comparison_df[selected_group_column].dropna().astype(str).nunique()
+    for group_column, missing_group_count in missing_group_counts.items():
+        if missing_group_count > 0:
+            st.warning(f"Grouping column '{group_column}' has {missing_group_count} well(s) with missing labels.")
+    comparison_df = comparison_df.copy()
+    group_label_column = "__compare_group_label__"
+    comparison_df[group_label_column] = _build_group_label_column(comparison_df, selected_group_columns)
+    category_count = comparison_df[group_label_column].dropna().astype(str).nunique()
     if category_count > 20:
         st.warning(
-            f"Grouping column '{selected_group_column}' has {category_count} categories; the plot may be crowded."
+            f"Selected grouping has {category_count} categories; the plot may be crowded."
         )
 
     replicate_columns = _candidate_replicate_columns(metadata_columns)
-    hover_columns = [selected_group_column]
+    hover_columns = [*selected_group_columns]
     for optional_column in [selected_color_column, selected_facet_column, *replicate_columns]:
         if optional_column and optional_column in comparison_df.columns and optional_column not in hover_columns:
             hover_columns.append(optional_column)
@@ -1205,27 +1233,82 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     hover_data = {selected_feature_column: ":.5g"}
     hover_data.update({column: True for column in hover_columns})
-    fig = px.box(
-        comparison_df,
-        x=selected_group_column,
-        y=selected_feature_column,
-        color=selected_color_column,
-        facet_col=selected_facet_column,
-        points="all",
-        hover_name="well",
-        hover_data=hover_data,
-        labels={
-            selected_group_column: selected_group_column,
-            selected_feature_column: _FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
-        },
-        title=(
-            f"{selected_signal_name}: {_FEATURE_LABELS.get(selected_feature_name, selected_feature_name)} "
-            f"by {selected_group_column}"
-        ),
-    )
-    fig.update_traces(jitter=0.35, pointpos=0.0, marker={"size": 7, "opacity": 0.75})
-    fig.update_layout(boxmode="group")
+    plot_mode = _comparison_plot_mode(comparison_df)
+    if plot_mode == "box":
+        fig = px.box(
+            comparison_df,
+            x=group_label_column,
+            y=selected_feature_column,
+            color=selected_color_column,
+            facet_col=selected_facet_column,
+            points="all",
+            hover_name="well",
+            hover_data=hover_data,
+            labels={
+                group_label_column: " | ".join(selected_group_columns),
+                selected_feature_column: _FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+            },
+            title=(
+                f"{selected_signal_name}: {_FEATURE_LABELS.get(selected_feature_name, selected_feature_name)} "
+                f"by {' + '.join(selected_group_columns)}"
+            ),
+        )
+        fig.update_traces(jitter=0.35, pointpos=0.0, marker={"size": 7, "opacity": 0.75})
+        fig.update_layout(boxmode="group")
+    else:
+        fig = px.strip(
+            comparison_df,
+            x=group_label_column,
+            y=selected_feature_column,
+            color=selected_color_column,
+            facet_col=selected_facet_column,
+            hover_name="well",
+            hover_data=hover_data,
+            labels={
+                group_label_column: " | ".join(selected_group_columns),
+                selected_feature_column: _FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+            },
+            title=(
+                f"{selected_signal_name}: {_FEATURE_LABELS.get(selected_feature_name, selected_feature_name)} "
+                f"points by {' + '.join(selected_group_columns)} (<3 wells)"
+            ),
+        )
+        fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
     st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
+
+    image_col1, image_col2 = st.columns(2)
+    with image_col1:
+        try:
+            png_bytes = fig.to_image(format="png")
+            st.download_button(
+                label="Download plot (PNG)",
+                data=png_bytes,
+                file_name=(
+                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+                    f"by_{'_'.join(selected_group_columns)}.png"
+                ),
+                mime="image/png",
+                key=f"download_compare_plot_png_{selected_signal_slug}",
+                on_click="ignore",
+            )
+        except Exception as exc:  # pragma: no cover - depends on runtime image backend
+            st.warning(f"PNG export unavailable in this environment: {exc}")
+    with image_col2:
+        try:
+            svg_bytes = fig.to_image(format="svg")
+            st.download_button(
+                label="Download plot (SVG)",
+                data=svg_bytes,
+                file_name=(
+                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+                    f"by_{'_'.join(selected_group_columns)}.svg"
+                ),
+                mime="image/svg+xml",
+                key=f"download_compare_plot_svg_{selected_signal_slug}",
+                on_click="ignore",
+            )
+        except Exception as exc:  # pragma: no cover - depends on runtime image backend
+            st.warning(f"SVG export unavailable in this environment: {exc}")
 
     st.caption("Comparison table used for plotting")
     st.dataframe(comparison_df, use_container_width=True)
@@ -1233,10 +1316,10 @@ def _render_analyze_data(st, plate_size: int) -> None:
         label="Download comparison table (CSV)",
         data=comparison_df.to_csv(index=False),
         file_name=(
-            f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{selected_group_column}.csv"
+            f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{'_'.join(selected_group_columns)}.csv"
         ),
         mime="text/csv",
-        key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{selected_group_column}",
+        key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{'_'.join(selected_group_columns)}",
         on_click="ignore",
     )
 
