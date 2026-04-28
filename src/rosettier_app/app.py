@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from io import BytesIO, StringIO
 import json
 import zipfile
+from collections import Counter
 
+import numpy as np
 import pandas as pd
 
 from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_max_value, extract_time_to_threshold
@@ -676,6 +678,39 @@ def _comparison_signal_options(available_comparison: list[dict[str, object]]) ->
     return options, option_map
 
 
+def _build_feature_ratio_table(
+    *,
+    numerator_signal: dict[str, object],
+    denominator_signal: dict[str, object],
+    feature_name: str,
+) -> tuple[pd.DataFrame, str, str, str]:
+    """Build a per-well feature ratio table (numerator/denominator)."""
+    numerator_name = str(numerator_signal["signal_name"]).strip() or "Signal_1"
+    denominator_name = str(denominator_signal["signal_name"]).strip() or "Signal_2"
+    numerator_features = numerator_signal["features_df"]
+    denominator_features = denominator_signal["features_df"]
+    if not isinstance(numerator_features, pd.DataFrame) or not isinstance(denominator_features, pd.DataFrame):
+        raise ValueError("Selected signals do not include extracted feature tables.")
+
+    numerator_column = _resolve_feature_column(numerator_features, numerator_name, feature_name)
+    denominator_column = _resolve_feature_column(denominator_features, denominator_name, feature_name)
+    if numerator_column is None or denominator_column is None:
+        raise ValueError(f"Feature '{feature_name}' is not available for both selected signals.")
+
+    numerator_df = numerator_features[["well", numerator_column]].rename(columns={numerator_column: "__numerator__"})
+    denominator_df = denominator_features[["well", denominator_column]].rename(columns={denominator_column: "__denominator__"})
+    ratio_df = numerator_df.merge(denominator_df, on="well", how="inner")
+    ratio_df["__numerator__"] = pd.to_numeric(ratio_df["__numerator__"], errors="coerce")
+    ratio_df["__denominator__"] = pd.to_numeric(ratio_df["__denominator__"], errors="coerce")
+    ratio_df["__ratio__"] = ratio_df["__numerator__"] / ratio_df["__denominator__"]
+    ratio_df = ratio_df.replace([np.inf, -np.inf], np.nan)
+    ratio_column = f"{numerator_name}_over_{denominator_name}_{feature_name}"
+    ratio_features_df = ratio_df[["well", "__ratio__"]].rename(columns={"__ratio__": ratio_column})
+    feature_label = f"{_FEATURE_LABELS.get(feature_name, feature_name)} ({numerator_name}/{denominator_name})"
+    signal_label = f"{numerator_name}/{denominator_name}"
+    return ratio_features_df, ratio_column, feature_label, signal_label
+
+
 def _combine_qc_outputs_for_export(qc: dict) -> pd.DataFrame:
     """Combine QC outputs into one tidy export table."""
     component_frames: list[pd.DataFrame] = []
@@ -804,10 +839,22 @@ def _build_analysis_bundle_zip(
     }
 
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        raw_signal_slugs: list[str] = []
         for signal_result in signal_results:
             signal_name = str(signal_result.get("signal_name", "")).strip() or "OD"
             signal_slug = str(signal_result.get("signal_slug", signal_name)).strip() or signal_name
-            signal_dir = f"signals/{signal_slug}"
+            raw_signal_slugs.append(signal_slug)
+
+        slug_counts = Counter(raw_signal_slugs)
+        slug_occurrences: dict[str, int] = {}
+
+        for signal_result in signal_results:
+            signal_name = str(signal_result.get("signal_name", "")).strip() or "OD"
+            signal_slug = str(signal_result.get("signal_slug", signal_name)).strip() or signal_name
+            slug_occurrences[signal_slug] = slug_occurrences.get(signal_slug, 0) + 1
+            occurrence = slug_occurrences[signal_slug]
+            signal_dir_slug = signal_slug if slug_counts[signal_slug] == 1 else f"{signal_slug}_{occurrence}"
+            signal_dir = f"signals/{signal_dir_slug}"
 
             tidy_df = signal_result.get("tidy_df")
             if isinstance(tidy_df, pd.DataFrame):
@@ -1337,27 +1384,102 @@ def _render_analyze_data(st, plate_size: int) -> None:
         st.info("No extracted feature tables are available yet for comparison plotting.")
     else:
         comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
-        selected_signal_option = st.selectbox(
-            "Signal",
-            options=comparison_signal_options,
-            format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
-            index=0,
-            key="compare_features_signal",
+        ratio_mode = st.checkbox(
+            "Relativizar entre inputs (ej: DO/GFP)",
+            value=False,
+            key="compare_features_ratio_mode",
+            help="Calcula ratios por pozo entre dos señales para un feature seleccionado.",
         )
-        selected_signal = comparison_signal_map[selected_signal_option]["signal"]
-        selected_signal_name = str(selected_signal["signal_name"])
-        selected_signal_slug = str(selected_signal["signal_slug"])
-        selected_features_df = selected_signal["features_df"]
-        selected_merged_df = selected_signal["merged_df"]
+        selected_features_df = None
+        selected_merged_df = None
+        selected_signal_name = ""
+        selected_signal_slug = ""
+        selected_feature_name = ""
+        selected_feature_column = ""
+        selected_feature_label = ""
 
-        selectable_features: list[tuple[str, str]] = []
-        for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
-            feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
-            if feature_column is not None:
-                selectable_features.append((feature_name, feature_column))
-        if not selectable_features:
-            st.info("No selectable feature columns were found for this signal.")
+        if ratio_mode:
+            numerator_option = st.selectbox(
+                "Numerador",
+                options=comparison_signal_options,
+                format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
+                index=0,
+                key="compare_features_ratio_numerator",
+            )
+            denominator_options = [option_id for option_id in comparison_signal_options if option_id != numerator_option]
+            if not denominator_options:
+                st.info("Se requieren al menos dos señales para calcular relativizaciones.")
+                return
+            denominator_option = st.selectbox(
+                "Denominador",
+                options=denominator_options,
+                format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
+                index=0,
+                key="compare_features_ratio_denominator",
+            )
+            numerator_signal = comparison_signal_map[numerator_option]["signal"]
+            denominator_signal = comparison_signal_map[denominator_option]["signal"]
+            numerator_name = str(numerator_signal["signal_name"])
+            denominator_name = str(denominator_signal["signal_name"])
+
+            shared_features: list[str] = []
+            for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
+                numerator_column = _resolve_feature_column(numerator_signal["features_df"], numerator_name, feature_name)
+                denominator_column = _resolve_feature_column(denominator_signal["features_df"], denominator_name, feature_name)
+                if numerator_column is not None and denominator_column is not None:
+                    shared_features.append(feature_name)
+
+            if not shared_features:
+                st.info("No hay features compartidos entre numerador y denominador para relativizar.")
+                return
+
+            selected_feature_name = st.selectbox(
+                "Feature",
+                options=shared_features,
+                format_func=lambda feature: _FEATURE_LABELS.get(feature, feature),
+                key="compare_features_ratio_feature_name",
+            )
+
+            try:
+                (
+                    selected_features_df,
+                    selected_feature_column,
+                    selected_feature_label,
+                    selected_signal_name,
+                ) = _build_feature_ratio_table(
+                    numerator_signal=numerator_signal,
+                    denominator_signal=denominator_signal,
+                    feature_name=selected_feature_name,
+                )
+            except ValueError as exc:
+                st.error(str(exc))
+                return
+
+            selected_signal_slug = f"{numerator_name}_over_{denominator_name}".replace(" ", "_")
+            selected_merged_df = numerator_signal["merged_df"]
         else:
+            selected_signal_option = st.selectbox(
+                "Signal",
+                options=comparison_signal_options,
+                format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
+                index=0,
+                key="compare_features_signal",
+            )
+            selected_signal = comparison_signal_map[selected_signal_option]["signal"]
+            selected_signal_name = str(selected_signal["signal_name"])
+            selected_signal_slug = str(selected_signal["signal_slug"])
+            selected_features_df = selected_signal["features_df"]
+            selected_merged_df = selected_signal["merged_df"]
+
+            selectable_features: list[tuple[str, str]] = []
+            for feature_name in ["auc", "endpoint", "max_slope", "max_value", "time_to_threshold"]:
+                feature_column = _resolve_feature_column(selected_features_df, selected_signal_name, feature_name)
+                if feature_column is not None:
+                    selectable_features.append((feature_name, feature_column))
+            if not selectable_features:
+                st.info("No selectable feature columns were found for this signal.")
+                return
+
             feature_lookup = {feature_name: feature_column for feature_name, feature_column in selectable_features}
             selected_feature_name = st.selectbox(
                 "Feature",
@@ -1366,11 +1488,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 key="compare_features_feature_name",
             )
             selected_feature_column = feature_lookup[selected_feature_name]
+            selected_feature_label = _FEATURE_LABELS.get(selected_feature_name, selected_feature_name)
 
-            metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
-            if not metadata_columns:
-                st.info("Comparison plotting requires merged Rosetta metadata columns.")
-            else:
+        metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
+        if not metadata_columns:
+            st.info("Comparison plotting requires merged Rosetta metadata columns.")
+        else:
                 selected_group_columns = st.multiselect(
                     "Grouping columns",
                     options=metadata_columns,
@@ -1449,7 +1572,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             comparison_df=comparison_df,
                             group_columns=selected_group_columns,
                             feature_column=selected_feature_column,
-                            feature_label=_FEATURE_LABELS.get(selected_feature_name, selected_feature_name),
+                            feature_label=selected_feature_label,
                             signal_name=selected_signal_name,
                             feature_name=selected_feature_name,
                             color_column=selected_color_column,
@@ -1514,7 +1637,6 @@ def main() -> None:
     st.set_page_config(page_title="Rosettier v2", page_icon="🧪", layout="wide")
 
     st.title("Rosettier v2")
-    st.caption("App shell with two modes. Core scientific logic remains in `rosettier` modules.")
 
     st.sidebar.header("Settings")
     plate_size = st.sidebar.selectbox("Plate size", options=[96, 384], index=0, key="sidebar_plate_size")

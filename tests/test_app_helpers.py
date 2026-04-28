@@ -429,6 +429,31 @@ def test_comparison_signal_options_disambiguate_duplicate_signal_names():
     assert option_map[options[2]]["label"] == "GFP"
 
 
+def test_build_feature_ratio_table_computes_per_well_ratio():
+    numerator_signal = {
+        "signal_name": "DO",
+        "features_df": pd.DataFrame({"well": ["A01", "A02"], "DO_endpoint": [0.8, 0.6]}),
+        "merged_df": pd.DataFrame({"well": ["A01", "A02"], "strain": ["WT", "KO"], "time": [0.0, 0.0], "value": [0.8, 0.6]}),
+    }
+    denominator_signal = {
+        "signal_name": "GFP",
+        "features_df": pd.DataFrame({"well": ["A01", "A02"], "GFP_endpoint": [0.4, 0.3]}),
+        "merged_df": None,
+    }
+
+    ratio_df, ratio_column, feature_label, signal_label = app._build_feature_ratio_table(
+        numerator_signal=numerator_signal,
+        denominator_signal=denominator_signal,
+        feature_name="endpoint",
+    )
+
+    assert ratio_column == "DO_over_GFP_endpoint"
+    assert feature_label == "Endpoint (DO/GFP)"
+    assert signal_label == "DO/GFP"
+    assert ratio_df["well"].tolist() == ["A01", "A02"]
+    assert ratio_df[ratio_column].tolist() == [2.0, 2.0]
+
+
 def test_build_analysis_bundle_zip_includes_manifest_and_signal_exports():
     signal_results = [
         {
@@ -495,3 +520,40 @@ def test_build_analysis_bundle_zip_includes_comparison_table_and_plots_when_avai
         assert "signals/OD/raw_curves_plot.html" in names
         assert "comparison/compare_od_auc.csv" in names
         assert "comparison/comparison_plot.html" in names
+
+
+def test_build_analysis_bundle_zip_disambiguates_duplicate_signal_slugs():
+    signal_results = [
+        {
+            "signal_name": "OD",
+            "signal_slug": "OD",
+            "tidy_df": pd.DataFrame({"well": ["A01"], "time": [0.0], "OD": [0.1]}),
+            "merged_df": None,
+            "features_df": None,
+            "qc_export_df": None,
+            "raw_curve_fig": None,
+        },
+        {
+            "signal_name": "OD",
+            "signal_slug": "OD",
+            "tidy_df": pd.DataFrame({"well": ["A02"], "time": [0.0], "OD": [0.2]}),
+            "merged_df": None,
+            "features_df": None,
+            "qc_export_df": None,
+            "raw_curve_fig": None,
+        },
+    ]
+
+    bundle_bytes = app._build_analysis_bundle_zip(
+        signal_results=signal_results,
+        plate_size=96,
+        config={},
+        comparison_df=None,
+        comparison_name=None,
+        comparison_fig=None,
+    )
+
+    with zipfile.ZipFile(BytesIO(bundle_bytes), mode="r") as bundle:
+        names = set(bundle.namelist())
+        assert "signals/OD_1/parsed_tidy.csv" in names
+        assert "signals/OD_2/parsed_tidy.csv" in names
