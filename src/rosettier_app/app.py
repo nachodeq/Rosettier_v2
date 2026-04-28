@@ -793,9 +793,19 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 )
             continue
 
-        if trace_type == "scatter":
-            x_values = _x_values_to_numeric(getattr(trace, "x", []))
-            y_values = [float(value) for value in list(getattr(trace, "y", []) or [])]
+        if trace_type in {"scatter", "scattergl"}:
+            raw_x_values = _x_values_to_numeric(getattr(trace, "x", []))
+            raw_y_values = list(getattr(trace, "y", []) or [])
+            if not raw_x_values or not raw_y_values:
+                continue
+
+            x_values: list[float] = []
+            y_values: list[float] = []
+            for x_value, y_value in zip(raw_x_values, raw_y_values, strict=False):
+                if pd.isna(y_value):
+                    continue
+                x_values.append(float(x_value))
+                y_values.append(float(y_value))
             if not x_values or not y_values:
                 continue
 
