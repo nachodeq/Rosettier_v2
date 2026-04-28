@@ -1292,6 +1292,19 @@ def _render_analyze_data(st, plate_size: int) -> None:
         fig.update_traces(jitter=0.35, marker={"size": 8, "opacity": 0.8})
     st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
 
+    html_bytes = fig.to_html(include_plotlyjs="cdn", full_html=True).encode("utf-8")
+    st.download_button(
+        label="Download plot (HTML)",
+        data=html_bytes,
+        file_name=(
+            f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
+            f"by_{'_'.join(selected_group_columns)}.html"
+        ),
+        mime="text/html",
+        key=f"download_compare_plot_html_{selected_signal_slug}",
+        on_click="ignore",
+    )
+
     image_col1, image_col2 = st.columns(2)
     with image_col1:
         try:
