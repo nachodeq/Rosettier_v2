@@ -637,16 +637,16 @@ def _build_feature_comparison_figure(
             fig.update_traces(marker={"color": "#4c78a8"}, showlegend=False)
 
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="white",
-        plot_bgcolor="white",
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
         margin={"l": 10, "r": 10, "t": 56, "b": 110},
         legend={"title": color_arg or "", "tracegroupgap": 0},
         boxmode="group",
         title=f"{signal_name}: {feature_label} by {title_suffix}",
     )
-    fig.update_xaxes(tickangle=32, title=" + ".join(group_columns))
-    fig.update_yaxes(title=feature_label)
+    fig.update_xaxes(tickangle=32, title=" + ".join(group_columns), showgrid=False)
+    fig.update_yaxes(title=feature_label, showgrid=False)
     if color_arg and plot_df[color_arg].nunique() > 12:
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
@@ -1372,68 +1372,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
     )
     if selected_color_column and selected_color_column in plot_df.columns and plot_df[selected_color_column].nunique() > 12:
         st.caption("Legend hidden because selected color column has many categories.")
-    st.plotly_chart(fig, use_container_width=True, key=f"compare_features_plot_{selected_signal_slug}")
-
-    html_bytes = fig.to_html(include_plotlyjs=True, full_html=True).encode("utf-8")
-    st.download_button(
-        label="Download plot (HTML, offline)",
-        data=html_bytes,
-        file_name=(
-            f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
-            f"by_{'_'.join(selected_group_columns)}.html"
-        ),
-        mime="text/html",
-        key=f"download_compare_plot_html_{selected_signal_slug}",
-        on_click="ignore",
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"compare_features_plot_{selected_signal_slug}",
+        config={"displayModeBar": False},
     )
-    st.caption(
-        "Offline export: HTML includes Plotly JS inline and does not require Kaleido, Chrome, or internet access."
-    )
-
-    st.download_button(
-        label="Download plot spec (JSON)",
-        data=fig.to_json(),
-        file_name=(
-            f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
-            f"by_{'_'.join(selected_group_columns)}.json"
-        ),
-        mime="application/json",
-        key=f"download_compare_plot_json_{selected_signal_slug}",
-        on_click="ignore",
-    )
-    image_col1, image_col2 = st.columns(2)
-    with image_col1:
-        png_bytes, png_warning = _try_plotly_static_export_bytes(fig, format="png")
-        if png_bytes is not None:
-            st.download_button(
-                label="Download plot (PNG)",
-                data=png_bytes,
-                file_name=(
-                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
-                    f"by_{'_'.join(selected_group_columns)}.png"
-                ),
-                mime="image/png",
-                key=f"download_compare_plot_png_kaleido_{selected_signal_slug}",
-                on_click="ignore",
-            )
-        elif png_warning is not None:
-            st.warning(png_warning)
-    with image_col2:
-        svg_bytes, svg_warning = _try_plotly_static_export_bytes(fig, format="svg")
-        if svg_bytes is not None:
-            st.download_button(
-                label="Download plot (SVG)",
-                data=svg_bytes,
-                file_name=(
-                    f"rosettier_compare_plot_{selected_signal_slug}_{selected_feature_name}_"
-                    f"by_{'_'.join(selected_group_columns)}.svg"
-                ),
-                mime="image/svg+xml",
-                key=f"download_compare_plot_svg_offline_{selected_signal_slug}",
-                on_click="ignore",
-            )
-        elif svg_warning is not None:
-            st.warning(svg_warning)
 
     st.caption("Comparison table used for plotting")
     st.dataframe(comparison_df, use_container_width=True)
