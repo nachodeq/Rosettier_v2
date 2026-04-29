@@ -967,7 +967,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
         plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
         if plot_title:
-            figure.suptitle(plot_title)
+            figure.suptitle(plot_title, y=0.995)
         x_axis = getattr(fig.layout, "xaxis", None)
         y_axis = getattr(fig.layout, "yaxis", None)
         x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
@@ -1004,14 +1004,14 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 unique_handles,
                 unique_labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, 0.99),
+                bbox_to_anchor=(0.5, 0.965),
                 frameon=False,
                 ncol=min(4, max(1, len(unique_labels))),
             )
 
         buffer = BytesIO()
         if has_legend:
-            figure.tight_layout(rect=(0, 0, 1, 0.92))
+            figure.tight_layout(rect=(0, 0, 1, 0.86))
         else:
             figure.tight_layout()
         savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}

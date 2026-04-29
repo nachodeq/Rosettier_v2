@@ -595,6 +595,91 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
     assert created_figures[0].axis.plot_kwargs[0]["color"] == "#4c78a8"
 
 
+
+
+def test_plotly_image_bytes_offsets_legend_below_title(monkeypatch):
+    import sys
+    import types
+    import plotly.graph_objects as go
+
+    class DummyAxis:
+        def plot(self, *_args, **_kwargs):
+            return None
+
+        def bar(self, *_args, **_kwargs):
+            return None
+
+        def boxplot(self, *_args, **_kwargs):
+            return None
+
+        def set_xticks(self, *_args, **_kwargs):
+            return None
+
+        def set_xticklabels(self, *_args, **_kwargs):
+            return None
+
+        def set_title(self, *_args, **_kwargs):
+            return None
+
+        def set_xlabel(self, *_args, **_kwargs):
+            return None
+
+        def set_ylabel(self, *_args, **_kwargs):
+            return None
+
+        def grid(self, *_args, **_kwargs):
+            return None
+
+        def get_legend_handles_labels(self):
+            return ([object()], ["All wells"])
+
+    class DummyFigure:
+        def __init__(self):
+            self.axis = DummyAxis()
+            self.suptitle_kwargs = {}
+            self.legend_kwargs = {}
+            self.tight_layout_kwargs = {}
+
+        def subplots(self, *_args, **_kwargs):
+            return [[self.axis]]
+
+        def suptitle(self, *_args, **kwargs):
+            self.suptitle_kwargs = kwargs
+
+        def legend(self, *_args, **kwargs):
+            self.legend_kwargs = kwargs
+
+        def tight_layout(self, *args, **kwargs):
+            self.tight_layout_kwargs = kwargs
+
+        def savefig(self, buffer, **_kwargs):
+            buffer.write(b"dummy-png")
+
+    created_figures: list[DummyFigure] = []
+
+    class DummyPyplot:
+        def figure(self, **_kwargs):
+            figure = DummyFigure()
+            created_figures.append(figure)
+            return figure
+
+        def close(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[0, 1], y=[1, 2], mode="lines", name="All wells"))
+    fig.update_layout(title="Raw Signal_1 curves")
+
+    _ = app._plotly_image_bytes(fig, image_format="png")
+
+    assert created_figures[0].suptitle_kwargs["y"] == 0.995
+    assert created_figures[0].legend_kwargs["bbox_to_anchor"] == (0.5, 0.965)
+    assert created_figures[0].tight_layout_kwargs["rect"] == (0, 0, 1, 0.86)
+
+
 def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
     import sys
     import types
