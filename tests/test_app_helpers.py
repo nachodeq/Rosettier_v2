@@ -464,6 +464,33 @@ def test_build_feature_comparison_figure_keeps_neutral_boxplot_when_color_column
     assert scatter_groups == {"WT", "KO"}
 
 
+
+
+def test_build_feature_comparison_figure_positions_title_above_legend():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "A04"],
+            "strain": ["WT", "WT", "KO", "KO"],
+            "replicate": ["r1", "r2", "r1", "r2"],
+            "feature_auc": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    fig, _ = app._build_feature_comparison_figure(
+        comparison_df=comparison,
+        group_columns=["strain"],
+        feature_column="feature_auc",
+        feature_label="AUC",
+        signal_name="OD",
+        feature_name="auc",
+        color_column="replicate",
+        facet_column=None,
+    )
+
+    assert fig.layout.title.y == 0.995
+    assert fig.layout.legend.y == 1.0
+    assert fig.layout.margin.t == 95
+
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
         def to_image(self, **kwargs):
