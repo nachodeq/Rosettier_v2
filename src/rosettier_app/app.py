@@ -991,12 +991,22 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             seen_labels.add(label)
             unique_handles.append(handle)
             unique_labels.append(label)
-        if unique_labels and len(unique_labels) <= 20:
-            first_axis = axes_grid[0][0]
-            first_axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
+        has_legend = bool(unique_labels and len(unique_labels) <= 20)
+        if has_legend:
+            figure.legend(
+                unique_handles,
+                unique_labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.99),
+                frameon=False,
+                ncol=min(4, max(1, len(unique_labels))),
+            )
 
         buffer = BytesIO()
-        figure.tight_layout()
+        if has_legend:
+            figure.tight_layout(rect=(0, 0, 1, 0.92))
+        else:
+            figure.tight_layout()
         savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}
         if image_format == "png":
             savefig_kwargs["dpi"] = 300
