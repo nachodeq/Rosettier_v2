@@ -936,12 +936,30 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
         return False, "PNG/SVG export requires matplotlib in the app dependencies."
 
 
+
+
+def _plot_has_large_legend(fig, *, limit: int = 20) -> bool:
+    """Return True when the plot contains more unique legend labels than the supported limit."""
+    seen_labels: set[str] = set()
+    for trace in getattr(fig, "data", []):
+        trace_name = str(getattr(trace, "name", "") or "").strip()
+        if not trace_name or trace_name == "_nolegend_":
+            continue
+        seen_labels.add(trace_name)
+        if len(seen_labels) > limit:
+            return True
+    return False
+
+
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str, show_preview: bool = True) -> None:
     """Render export preview and static image download buttons for a Plotly figure."""
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
         st.caption(unavailable_message)
         return
+
+    if _plot_has_large_legend(fig):
+        st.warning("Legend is too big to be shown. You can still export the plot.")
 
     png_error = None
     try:

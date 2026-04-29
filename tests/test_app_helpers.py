@@ -651,88 +651,51 @@ def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
 
 
 
-def test_plotly_image_bytes_shows_message_when_legend_too_large(monkeypatch):
-    import sys
-    import types
-    import plotly.graph_objects as go
-
-    class DummyAxis:
-        def __init__(self):
-            self.text_calls: list[str] = []
-            self.transAxes = object()
-
-        def plot(self, *_args, **_kwargs):
-            return None
-
-        def boxplot(self, *_args, **_kwargs):
-            return None
-
-        def bar(self, *_args, **_kwargs):
-            return None
-
-        def set_xticks(self, *_args, **_kwargs):
-            return None
-
-        def set_xticklabels(self, *_args, **_kwargs):
-            return None
-
-        def set_title(self, *_args, **_kwargs):
-            return None
-
-        def set_xlabel(self, *_args, **_kwargs):
-            return None
-
-        def set_ylabel(self, *_args, **_kwargs):
-            return None
-
-        def grid(self, *_args, **_kwargs):
-            return None
-
-        def get_legend_handles_labels(self):
-            labels = [f"Label {idx}" for idx in range(21)]
-            return ([object() for _ in labels], labels)
-
-        def legend(self, *_args, **_kwargs):
-            raise AssertionError("Legend should not be rendered when there are more than 20 labels")
-
-        def text(self, _x, _y, message, **_kwargs):
-            self.text_calls.append(message)
+def test_render_plot_download_buttons_warns_when_legend_too_large():
+    calls: list[dict] = []
+    warnings: list[str] = []
 
     class DummyFigure:
-        def __init__(self):
-            self.axis = DummyAxis()
+        def to_image(self, **kwargs):
+            fmt = kwargs["format"]
+            return f"{fmt}-bytes".encode("utf-8")
 
-        def add_subplot(self, *_args, **_kwargs):
-            return self.axis
+    class DummySt:
+        def warning(self, text):
+            warnings.append(str(text))
 
-        def tight_layout(self):
+        def download_button(self, **kwargs):
+            calls.append(kwargs)
+
+        def image(self, *_args, **_kwargs):
             return None
 
-        def savefig(self, buffer, **_kwargs):
-            buffer.write(b"dummy-png")
-
-    created_figures: list[DummyFigure] = []
-
-    class DummyPyplot:
-        def figure(self, **_kwargs):
-            figure = DummyFigure()
-            created_figures.append(figure)
-            return figure
-
-        def close(self, *_args, **_kwargs):
+        def caption(self, *_args, **_kwargs):
             return None
 
-    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
-    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+    original_status = app._plotly_static_export_status
+    original_bytes = app._plotly_image_bytes
+    original_large_legend = app._plot_has_large_legend
+    try:
+        app._plotly_static_export_status = lambda: (True, None)
+        app._plot_has_large_legend = lambda _fig: True
+        app._plotly_image_bytes = lambda fig, image_format: f"{image_format}-bytes".encode("utf-8")
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=[0, 1], y=[1, 2], mode="lines", name="trace"))
+        app._render_plot_download_buttons(
+            DummySt(),
+            fig=DummyFigure(),
+            filename_stem="comparison_plot",
+            key_prefix="legend_warn",
+        )
+    finally:
+        app._plotly_static_export_status = original_status
+        app._plotly_image_bytes = original_bytes
+        app._plot_has_large_legend = original_large_legend
 
-    png_bytes = app._plotly_image_bytes(fig, image_format="png")
+    assert warnings == ["Legend is too big to be shown. You can still export the plot."]
+    labels = {entry["label"] for entry in calls}
+    assert labels == {"Download plot (PNG)", "Download plot (SVG)"}
 
-    assert isinstance(png_bytes, bytes)
-    assert len(png_bytes) > 0
-    assert created_figures[0].axis.text_calls == ["Legend is too big to be shown."]
 
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
