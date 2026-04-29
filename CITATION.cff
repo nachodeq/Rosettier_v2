@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: Rosettier v2
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
+authors:
+  - family-names: Rosettier
+    given-names: Contributors
+repository-code: "https://github.com/<org>/Rosettier_v2"
+url: "https://github.com/<org>/Rosettier_v2"
+version: "0.2.0"
+date-released: 2026-04-29
+license: MIT
+abstract: >-
+  Rosettier v2 is a local toolkit for creating Rosetta plate layouts,
+  parsing plate-reader measurements, and generating analysis-ready outputs.
+keywords:
+  - high-throughput screening
+  - plate reader
+  - rosetta table
+  - assay analysis
