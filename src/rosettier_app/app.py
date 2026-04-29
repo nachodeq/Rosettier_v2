@@ -206,11 +206,6 @@ def _event_contains_selection_payload(event: dict | None) -> bool:
     return len(points) > 0
 
 
-def _init_rosetta_state(st, plate_size: int) -> None:
-    """Initialize stable session state for Create Rosetta mode."""
-    _init_rosetta_editor_state(st, state_prefix="rosetta", plate_size=plate_size)
-
-
 def _init_rosetta_editor_state(st, state_prefix: str, plate_size: int) -> None:
     """Initialize stable editor state for any Rosetta editor instance."""
     variables_key = f"{state_prefix}_variables"
@@ -813,8 +808,26 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         n_rows = max((row for row, _ in panel_position.values()), default=0) + 1
         n_cols = max((col for _, col in panel_position.values()), default=0) + 1
 
-        figure = plt.figure(figsize=(max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows)))
-        axes_grid = figure.subplots(n_rows, n_cols, squeeze=False, sharey=True)
+        figsize = (max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows))
+        if hasattr(plt, "subplots"):
+            figure, axes_grid = plt.subplots(
+                n_rows,
+                n_cols,
+                squeeze=False,
+                sharey=True,
+                figsize=figsize,
+            )
+        else:  # pragma: no cover - compatibility path for limited matplotlib stubs
+            figure = plt.figure(figsize=figsize)
+            if hasattr(figure, "subplots"):
+                axes_grid = figure.subplots(n_rows, n_cols, squeeze=False, sharey=True)
+            else:
+                axes_grid = []
+                for row in range(n_rows):
+                    axis_row = []
+                    for col in range(n_cols):
+                        axis_row.append(figure.add_subplot(n_rows, n_cols, (row * n_cols) + col + 1))
+                    axes_grid.append(axis_row)
         axis_by_subplot = {
             key: axes_grid[row][col] for key, (row, col) in panel_position.items()
         }
@@ -966,7 +979,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 axis.set_title(facet_title)
 
         plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
-        if plot_title:
+        if plot_title and hasattr(figure, "suptitle"):
             figure.suptitle(plot_title, y=0.995)
         x_axis = getattr(fig.layout, "xaxis", None)
         y_axis = getattr(fig.layout, "yaxis", None)
@@ -986,9 +999,9 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         for row in range(n_rows):
             for col in range(n_cols):
                 axis = axes_grid[row][col]
-            axis_handles, axis_labels = axis.get_legend_handles_labels()
-            handles.extend(axis_handles)
-            labels.extend(axis_labels)
+                axis_handles, axis_labels = axis.get_legend_handles_labels()
+                handles.extend(axis_handles)
+                labels.extend(axis_labels)
         unique_handles: list = []
         unique_labels: list[str] = []
         seen_labels: set[str] = set()
@@ -999,7 +1012,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_handles.append(handle)
             unique_labels.append(label)
         has_legend = bool(unique_labels and len(unique_labels) <= 20)
-        if has_legend:
+        if has_legend and hasattr(figure, "legend"):
             figure.legend(
                 unique_handles,
                 unique_labels,
@@ -1011,7 +1024,10 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
         buffer = BytesIO()
         if has_legend:
-            figure.tight_layout(rect=(0, 0, 1, 0.86))
+            try:
+                figure.tight_layout(rect=(0, 0, 1, 0.86))
+            except TypeError:
+                figure.tight_layout()
         else:
             figure.tight_layout()
         savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}
