@@ -1,6 +1,6 @@
 # Rosettier v2
 
-Rosettier v2 is a local-first toolkit for plate-based assay workflows. It combines a reusable Python core (`rosettier`) with a Streamlit app (`rosettier_app`) to help scientists:
+Rosettier v2 is a tool for plate-based assay workflows. It combines a reusable Python core (`rosettier`) with a Streamlit app (`rosettier_app`) to help scientists:
 
 - build or import Rosetta plate maps,
 - parse plate-reader time-series files,
