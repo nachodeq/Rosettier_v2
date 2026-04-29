@@ -697,6 +697,23 @@ def test_render_plot_download_buttons_warns_when_legend_too_large():
     assert labels == {"Download plot (PNG)", "Download plot (SVG)"}
 
 
+def test_plot_has_large_legend_counts_only_exported_trace_types():
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+    for idx in range(30):
+        fig.add_trace(
+            go.Box(
+                x=["A", "B", "C"],
+                y=[idx, idx + 1, idx + 2],
+                name=f"box-{idx}",
+                showlegend=True,
+            )
+        )
+
+    assert app._plot_has_large_legend(fig) is False
+
+
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
     captions: list[str] = []

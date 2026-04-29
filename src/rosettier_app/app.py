@@ -898,18 +898,6 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_labels.append(label)
         if unique_labels and len(unique_labels) <= 20:
             axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
-        elif len(unique_labels) > 20:
-            axis.text(
-                0.99,
-                0.99,
-                "Legend is too big to be shown.",
-                transform=axis.transAxes,
-                ha="right",
-                va="top",
-                fontsize=8,
-                color="#555",
-                bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2.0},
-            )
 
         buffer = BytesIO()
         figure.tight_layout()
@@ -942,6 +930,11 @@ def _plot_has_large_legend(fig, *, limit: int = 20) -> bool:
     """Return True when the plot contains more unique legend labels than the supported limit."""
     seen_labels: set[str] = set()
     for trace in getattr(fig, "data", []):
+        trace_type = str(getattr(trace, "type", "")).lower()
+        if trace_type not in {"scatter", "scattergl", "bar"}:
+            continue
+        if getattr(trace, "showlegend", True) is False:
+            continue
         trace_name = str(getattr(trace, "name", "") or "").strip()
         if not trace_name or trace_name == "_nolegend_":
             continue
