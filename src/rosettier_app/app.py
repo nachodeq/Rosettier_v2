@@ -322,7 +322,7 @@ def _render_rosetta_editor(
     selected_viz = None if selected_viz_label == "None" else selected_viz_label
 
     fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=selected_viz)
-    event = st.plotly_chart(fig, use_container_width=False, key=f"{widget_prefix}_plate", on_select="rerun")
+    event = st.plotly_chart(fig, use_container_width=True, key=f"{widget_prefix}_plate", on_select="rerun")
     just_selected = _selected_wells_from_event(event, rosetta_df)
     if _event_contains_selection_payload(event):
         st.session_state[selected_key] = sorted(set(just_selected))
@@ -744,7 +744,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
     figure = None
     try:
-        figure = plt.figure(figsize=(8, 4.8))
+        figure = plt.figure(figsize=(4, 2.4))
         axis = figure.add_subplot(1, 1, 1)
 
         categorical_x = False
