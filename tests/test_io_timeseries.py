@@ -119,7 +119,7 @@ def test_parse_plate_reader_wide_96_with_decimal_point_and_comma_delimiter():
 
 
 def test_parse_plate_reader_wide_384_fixture_handles_decimal_comma_and_ignores_temperature():
-    fixture_text = (Path(__file__).parent.parent / "examples" / "fixtures" / "plate_reader_384_example.txt").read_text(encoding="utf-8")
+    fixture_text = (Path(__file__).parent.parent / "examples" / "384_OD_Measurements.tsv").read_text(encoding="utf-8")
     tidy = parse_plate_reader_wide(
         fixture_text,
         plate_size=384,
@@ -174,8 +174,8 @@ def test_parse_plate_reader_wide_auto_decimal_parses_mixed_separators_eu_style()
 
 def test_parse_plate_reader_wide_merge_with_layout_metadata_fixture_smoke():
     base = Path(__file__).parent.parent
-    measurements_text = (base / "examples" / "fixtures" / "plate_reader_384_example.txt").read_text(encoding="utf-8")
-    layout_df = pd.read_csv(base / "examples" / "fixtures" / "rosetta_384_example.tsv", sep="\t")
+    measurements_text = (base / "examples" / "384_OD_Measurements.tsv").read_text(encoding="utf-8")
+    layout_df = pd.read_csv(base / "examples" / "384_Rosetta.tsv", sep="\t")
     tidy = parse_plate_reader_wide(
         measurements_text,
         plate_size=384,
@@ -185,5 +185,5 @@ def test_parse_plate_reader_wide_merge_with_layout_metadata_fixture_smoke():
     )
     validated_layout = load_layout(layout_df, plate_size=384, well_col="Well")
     merged = merge_measurements_with_layout(tidy, validated_layout, plate_size=384, layout_well_col="Well")
-    assert "sada" in merged.columns
+    assert "strain" in merged.columns
     assert merged["well"].nunique() == 384
