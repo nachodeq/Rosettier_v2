@@ -715,6 +715,8 @@ def _build_feature_comparison_figure(
         margin={"l": 40, "r": 20, "t": 70, "b": 130},
         legend={"title": color_arg or "", "tracegroupgap": 0},
         title=f"{signal_name}: {feature_label} by {title_suffix}",
+        height=430,
+        width=760,
     )
     fig.update_xaxes(title=" + ".join(group_columns))
     fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec")
@@ -742,7 +744,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
     figure = None
     try:
-        figure = plt.figure(figsize=(10, 6))
+        figure = plt.figure(figsize=(8, 4.8))
         axis = figure.add_subplot(1, 1, 1)
 
         categorical_x = False
@@ -891,7 +893,10 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
         buffer = BytesIO()
         figure.tight_layout()
-        figure.savefig(buffer, format=image_format, bbox_inches="tight")
+        savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}
+        if image_format == "png":
+            savefig_kwargs["dpi"] = 300
+        figure.savefig(buffer, **savefig_kwargs)
         plt.close(figure)
         return buffer.getvalue()
     except Exception as exc:
@@ -1596,6 +1601,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 line={"width": 1.3},
                 hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
             )
+            fig.update_layout(height=420, width=760)
             _render_plot_download_buttons(
                 st,
                 fig=fig,
@@ -1920,6 +1926,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             fig=fig,
                             filename_stem=f"{selected_signal_slug}_{selected_feature_name}_comparison",
                             key_prefix=f"download_compare_plot_{selected_signal_slug}_{selected_feature_name}",
+                            show_preview=False,
                         )
 
                         st.caption("Comparison table used for plotting")
