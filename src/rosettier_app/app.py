@@ -744,7 +744,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
     figure = None
     try:
-        figure = plt.figure(figsize=(4, 2.4))
+        figure = plt.figure(figsize=(6, 3.6))
         axis = figure.add_subplot(1, 1, 1)
 
         categorical_x = False
