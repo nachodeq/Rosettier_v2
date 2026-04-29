@@ -746,8 +746,9 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
     try:
         def _subplot_key_for_trace(trace) -> str:
             x_axis_ref = str(getattr(trace, "xaxis", "") or "x")
-            y_axis_ref = str(getattr(trace, "yaxis", "") or "y")
-            return f"{x_axis_ref}|{y_axis_ref}"
+            # Secondary y-axes (y2, y3, ...) can intentionally overlay the same panel.
+            # Panel grouping should therefore be keyed by x-axis, not x|y pairs.
+            return x_axis_ref
 
         def _axis_ref_rank(axis_ref: str) -> int:
             if len(axis_ref) <= 1:
@@ -755,24 +756,61 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             suffix = axis_ref[1:]
             return int(suffix) if suffix.isdigit() else 10_000
 
+        def _axis_layout(axis_ref: str):
+            attr_name = "xaxis" if axis_ref == "x" else f"xaxis{axis_ref[1:]}"
+            return getattr(fig.layout, attr_name, None)
+
+        def _axis_domain_center(axis_layout, *, default: float) -> float:
+            domain = getattr(axis_layout, "domain", None) if axis_layout is not None else None
+            if isinstance(domain, (list, tuple)) and len(domain) == 2:
+                try:
+                    return (float(domain[0]) + float(domain[1])) / 2.0
+                except (TypeError, ValueError):
+                    return default
+            return default
+
         subplot_keys: list[str] = []
         for trace in fig.data:
             key = _subplot_key_for_trace(trace)
             if key not in subplot_keys:
                 subplot_keys.append(key)
-        subplot_keys = sorted(
-            subplot_keys,
-            key=lambda key: (
-                _axis_ref_rank(key.split("|", maxsplit=1)[0]),
-                _axis_ref_rank(key.split("|", maxsplit=1)[1]),
-            ),
-        )
+        subplot_keys = sorted(subplot_keys, key=_axis_ref_rank)
         if not subplot_keys:
-            subplot_keys = ["x|y"]
+            subplot_keys = ["x"]
 
-        figure = plt.figure(figsize=(max(6.8, 4.4 * len(subplot_keys)), 7.2))
-        axes = figure.subplots(1, len(subplot_keys), squeeze=False, sharey=True)[0]
-        axis_by_subplot = {key: axes[idx] for idx, key in enumerate(subplot_keys)}
+        # Build a grid that preserves multi-row/multi-column subplot layouts.
+        x_centers = {
+            key: _axis_domain_center(_axis_layout(key), default=float(_axis_ref_rank(key)))
+            for key in subplot_keys
+        }
+        y_centers: dict[str, float] = {}
+        for key in subplot_keys:
+            # Find first y-axis used with this x-axis and use its domain to infer row.
+            matching_trace = next((trace for trace in fig.data if _subplot_key_for_trace(trace) == key), None)
+            y_ref = str(getattr(matching_trace, "yaxis", "") or "y") if matching_trace is not None else "y"
+            y_layout_attr = "yaxis" if y_ref == "y" else f"yaxis{y_ref[1:]}"
+            y_layout = getattr(fig.layout, y_layout_attr, None)
+            y_centers[key] = _axis_domain_center(y_layout, default=0.5)
+
+        unique_x_centers = sorted({round(center, 6) for center in x_centers.values()})
+        unique_y_centers = sorted({round(center, 6) for center in y_centers.values()}, reverse=True)
+        col_by_center = {center: idx for idx, center in enumerate(unique_x_centers)}
+        row_by_center = {center: idx for idx, center in enumerate(unique_y_centers)}
+        panel_position = {
+            key: (
+                row_by_center[round(y_centers[key], 6)],
+                col_by_center[round(x_centers[key], 6)],
+            )
+            for key in subplot_keys
+        }
+        n_rows = max((row for row, _ in panel_position.values()), default=0) + 1
+        n_cols = max((col for _, col in panel_position.values()), default=0) + 1
+
+        figure = plt.figure(figsize=(max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows)))
+        axes_grid = figure.subplots(n_rows, n_cols, squeeze=False, sharey=True)
+        axis_by_subplot = {
+            key: axes_grid[row][col] for key, (row, col) in panel_position.items()
+        }
         categorical_x_by_subplot: dict[str, bool] = {key: False for key in subplot_keys}
         category_to_index_by_subplot: dict[str, dict[str, int]] = {key: {} for key in subplot_keys}
 
@@ -927,16 +965,20 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         y_axis = getattr(fig.layout, "yaxis", None)
         x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
         y_axis_title = str(getattr(getattr(y_axis, "title", None), "text", "") or "")
-        for idx, axis in enumerate(axes):
-            if x_axis_title:
-                axis.set_xlabel(x_axis_title)
-            if y_axis_title and idx == 0:
-                axis.set_ylabel(y_axis_title)
-            axis.grid(alpha=0.25)
+        for row in range(n_rows):
+            for col in range(n_cols):
+                axis = axes_grid[row][col]
+                if x_axis_title:
+                    axis.set_xlabel(x_axis_title)
+                if y_axis_title and col == 0:
+                    axis.set_ylabel(y_axis_title)
+                axis.grid(alpha=0.25)
 
         handles: list = []
         labels: list[str] = []
-        for axis in axes:
+        for row in range(n_rows):
+            for col in range(n_cols):
+                axis = axes_grid[row][col]
             axis_handles, axis_labels = axis.get_legend_handles_labels()
             handles.extend(axis_handles)
             labels.extend(axis_labels)
@@ -950,7 +992,8 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_handles.append(handle)
             unique_labels.append(label)
         if unique_labels and len(unique_labels) <= 20:
-            axes[0].legend(unique_handles, unique_labels, loc="best", frameon=False)
+            first_axis = axes_grid[0][0]
+            first_axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
 
         buffer = BytesIO()
         figure.tight_layout()
