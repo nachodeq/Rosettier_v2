@@ -748,9 +748,14 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         categorical_x = False
         category_to_index: dict[str, int] = {}
 
+        def _as_list(values) -> list:
+            if values is None:
+                return []
+            return list(values)
+
         def _x_values_to_numeric(x_values) -> list[float]:
             nonlocal categorical_x
-            values = list(x_values) if x_values is not None else []
+            values = _as_list(x_values)
             if not values:
                 return []
             numeric_values: list[float] = []
@@ -769,8 +774,8 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             trace_type = str(getattr(trace, "type", "")).lower()
             trace_name = str(getattr(trace, "name", "") or "")
             if trace_type == "box":
-                x_values = list(getattr(trace, "x", []) or [])
-                y_values = list(getattr(trace, "y", []) or [])
+                x_values = _as_list(getattr(trace, "x", []))
+                y_values = _as_list(getattr(trace, "y", []))
                 grouped: dict[str, list[float]] = {}
                 for x_value, y_value in zip(x_values, y_values, strict=False):
                     if pd.isna(y_value):
@@ -797,7 +802,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
             if trace_type in {"scatter", "scattergl"}:
                 raw_x_values = _x_values_to_numeric(getattr(trace, "x", []))
-                raw_y_values = list(getattr(trace, "y", []) or [])
+                raw_y_values = _as_list(getattr(trace, "y", []))
                 if not raw_x_values or not raw_y_values:
                     continue
 
@@ -832,7 +837,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
             if trace_type == "bar":
                 raw_x_values = _x_values_to_numeric(getattr(trace, "x", []))
-                raw_y_values = list(getattr(trace, "y", []) or [])
+                raw_y_values = _as_list(getattr(trace, "y", []))
                 x_values: list[float] = []
                 y_values: list[float] = []
                 for x_value, y_value in zip(raw_x_values, raw_y_values, strict=False):

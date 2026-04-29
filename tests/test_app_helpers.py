@@ -564,6 +564,87 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
     assert created_figures and created_figures[0].axis.lines == [([0.0, 1.0, 2.0], [0.1, 0.2, 0.3])]
 
 
+def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
+    import sys
+    import types
+    import numpy as np
+    import plotly.graph_objects as go
+    class DummyAxis:
+        def __init__(self):
+            self.lines = []
+
+        def plot(self, x, y, **_kwargs):
+            self.lines.append((list(x), list(y)))
+
+        def bar(self, *_args, **_kwargs):
+            return None
+
+        def boxplot(self, *_args, **_kwargs):
+            return None
+
+        def set_xticks(self, *_args, **_kwargs):
+            return None
+
+        def set_xticklabels(self, *_args, **_kwargs):
+            return None
+
+        def set_title(self, *_args, **_kwargs):
+            return None
+
+        def set_xlabel(self, *_args, **_kwargs):
+            return None
+
+        def set_ylabel(self, *_args, **_kwargs):
+            return None
+
+        def grid(self, *_args, **_kwargs):
+            return None
+
+        def get_legend_handles_labels(self):
+            return [], []
+
+        def legend(self, *_args, **_kwargs):
+            return None
+
+    class DummyFigure:
+        def __init__(self):
+            self.axis = DummyAxis()
+
+        def add_subplot(self, *_args, **_kwargs):
+            return self.axis
+
+        def tight_layout(self):
+            return None
+
+        def savefig(self, buffer, **_kwargs):
+            buffer.write(b"dummy-png")
+
+    class DummyPyplot:
+        def figure(self, **_kwargs):
+            return DummyFigure()
+
+        def close(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=np.array([0.0, 1.0, 2.0]),
+            y=np.array([0.1, 0.2, 0.3]),
+            mode="markers",
+            name="All wells",
+        )
+    )
+
+    png_bytes = app._plotly_image_bytes(fig, image_format="png")
+
+    assert isinstance(png_bytes, bytes)
+    assert len(png_bytes) > 0
+
+
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
     captions: list[str] = []
