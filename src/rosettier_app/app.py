@@ -825,11 +825,19 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 mode = str(getattr(trace, "mode", "")).lower()
                 marker = "o" if "markers" in mode else None
                 linestyle = "-" if "lines" in mode else "None"
+                trace_line = getattr(trace, "line", None)
+                trace_marker = getattr(trace, "marker", None)
+                trace_color = None
+                if trace_line is not None:
+                    trace_color = getattr(trace_line, "color", None)
+                if trace_color is None and trace_marker is not None:
+                    trace_color = getattr(trace_marker, "color", None)
                 axis.plot(
                     x_values,
                     y_values,
                     linestyle=linestyle,
                     marker=marker,
+                    color=trace_color,
                     alpha=0.85,
                     markersize=4.8,
                     linewidth=1.1,

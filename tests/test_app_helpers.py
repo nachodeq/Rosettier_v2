@@ -483,9 +483,11 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
     class DummyAxis:
         def __init__(self):
             self.lines: list[tuple[list[float], list[float]]] = []
+            self.plot_kwargs: list[dict] = []
 
         def plot(self, x_values, y_values, **kwargs):
             self.lines.append((list(x_values), list(y_values)))
+            self.plot_kwargs.append(kwargs)
 
         def boxplot(self, *args, **kwargs):
             return None
@@ -551,6 +553,7 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
             y=[0.1, 0.2, 0.3],
             mode="lines",
             name="All wells",
+            line={"color": "#4c78a8"},
         )
     )
     fig.update_layout(title="Raw Signal_1 curves")
@@ -562,6 +565,7 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
     assert isinstance(png_bytes, bytes)
     assert len(png_bytes) > 0
     assert created_figures and created_figures[0].axis.lines == [([0.0, 1.0, 2.0], [0.1, 0.2, 0.3])]
+    assert created_figures[0].axis.plot_kwargs[0]["color"] == "#4c78a8"
 
 
 def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
