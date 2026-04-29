@@ -744,7 +744,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
     figure = None
     try:
-        figure = plt.figure(figsize=(8, 4.8))
+        figure = plt.figure(figsize=(4, 2.4))
         axis = figure.add_subplot(1, 1, 1)
 
         categorical_x = False
@@ -932,7 +932,11 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
 
     if png_bytes is not None:
         if show_preview:
-            st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
+            try:
+                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=560)
+            except TypeError:
+                # Backward-compatible call shape for test doubles/older st-like APIs.
+                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False)
         st.download_button(
             label="Download plot (PNG)",
             data=png_bytes,
