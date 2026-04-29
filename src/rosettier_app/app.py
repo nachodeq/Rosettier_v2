@@ -740,6 +740,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
     except ModuleNotFoundError:
         raise RuntimeError("PNG/SVG export requires matplotlib.")
 
+    figure = None
     try:
         figure = plt.figure(figsize=(10, 6))
         axis = figure.add_subplot(1, 1, 1)
@@ -880,6 +881,8 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         plt.close(figure)
         return buffer.getvalue()
     except Exception:
+        if figure is not None:
+            plt.close(figure)
         if hasattr(fig, "to_image"):
             return fig.to_image(format=image_format)
         raise
