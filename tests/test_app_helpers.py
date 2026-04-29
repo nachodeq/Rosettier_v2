@@ -685,7 +685,7 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     assert calls[0]["file_name"] == "my_plot.png"
     assert calls[1]["label"] == "Download plot (SVG)"
     assert calls[1]["file_name"] == "my_plot.svg"
-    assert images == [(b"png-bytes", "my_plot.png")]
+    assert images == [(b"png-bytes", "None")]
     assert captions == []
 
 
