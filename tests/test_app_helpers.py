@@ -605,7 +605,7 @@ def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     assert calls[1]["label"] == "Download plot (SVG)"
     assert calls[1]["file_name"] == "my_plot.svg"
     assert images == [(b"png-bytes", "my_plot.png")]
-    assert captions == ["Export preview (PNG): this is exactly what the app will download."]
+    assert captions == []
 
 
 def test_render_plot_download_buttons_shows_friendly_message_when_static_export_unavailable():
