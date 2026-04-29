@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: Rosettier
     given-names: Contributors
-repository-code: "https://github.com/<org>/Rosettier_v2"
-url: "https://github.com/<org>/Rosettier_v2"
+repository-code: "https://github.com/nachodeq/Rosettier_v2"
+url: "https://github.com/nachodeq/Rosettier_v2"
 version: "0.2.0"
 date-released: 2026-04-29
 license: MIT

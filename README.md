@@ -24,15 +24,12 @@ python -m pip install --no-build-isolation -e ".[app]"
 python -m pip install -e ".[dev,app]"
 ```
 
-### 2) (Placeholder) Conda environment install
-
-> Conda setup placeholder (to be completed with pinned environment details).
+### 2) Conda environment install
 
 ```bash
-# TODO: add official conda instructions
-# conda create -n rosettier python=3.11
-# conda activate rosettier
-# pip install -e ".[dev,app]"
+conda create -n rosettier python=3.11
+conda activate rosettier
+python -m pip install --no-build-isolation -e ".[app]"
 ```
 
 ### 3) Launch the app
@@ -74,19 +71,20 @@ Detailed schema notes: `docs/input_formats.md`.
 python -c "import pandas as pd; from rosettier.io import parse_plate_reader_wide; df = pd.read_csv('examples/fixtures/plate_reader_384_example.txt', sep='\t'); tidy = parse_plate_reader_wide(df, plate_size=384); print(tidy.head())"
 ```
 
-### (Placeholder) Example notebooks/tutorials
+### End-to-end examples
 
-> TODO: add step-by-step examples for end users:
->
-> - End-to-end 96-well analysis.
-> - End-to-end 384-well analysis.
-> - QC + export workflow.
+Use the guides in `docs/` for complete workflows:
+
+- `docs/quickstart.md`
+- `docs/create_rosetta.md`
+- `docs/analyze_data.md`
+- `docs/input_formats.md`
 
 ## Citation
 
 If you use Rosettier v2 in a publication, please cite the software release.
 
-> Citation placeholder: metadata is provided in `CITATION.cff` and should be updated with final DOI on release.
+Cite using the metadata in `CITATION.cff`. A DOI will be added once a Zenodo archive is created.
 
 ## License
 
