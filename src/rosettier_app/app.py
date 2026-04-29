@@ -322,7 +322,7 @@ def _render_rosetta_editor(
     selected_viz = None if selected_viz_label == "None" else selected_viz_label
 
     fig = _make_plate_figure(rosetta_df, spec, selected_wells, color_variable=selected_viz)
-    event = st.plotly_chart(fig, use_container_width=True, key=f"{widget_prefix}_plate", on_select="rerun")
+    event = st.plotly_chart(fig, use_container_width=False, key=f"{widget_prefix}_plate", on_select="rerun")
     just_selected = _selected_wells_from_event(event, rosetta_df)
     if _event_contains_selection_payload(event):
         st.session_state[selected_key] = sorted(set(just_selected))
@@ -932,7 +932,7 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
 
     if png_bytes is not None:
         if show_preview:
-            st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
+            st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=560)
         st.download_button(
             label="Download plot (PNG)",
             data=png_bytes,
