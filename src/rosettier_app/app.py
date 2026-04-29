@@ -880,12 +880,12 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         figure.savefig(buffer, format=image_format, bbox_inches="tight")
         plt.close(figure)
         return buffer.getvalue()
-    except Exception:
+    except Exception as exc:
         if figure is not None:
             plt.close(figure)
-        if hasattr(fig, "to_image"):
-            return fig.to_image(format=image_format)
-        raise
+        raise RuntimeError(
+            f"Matplotlib-based {image_format.upper()} export failed: {exc}"
+        ) from exc
 
 
 def _plotly_static_export_status() -> tuple[bool, str | None]:
@@ -904,10 +904,12 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
         st.caption(unavailable_message)
         return
 
+    png_error = None
     try:
         png_bytes = _plotly_image_bytes(fig, image_format="png")
-    except Exception:  # pragma: no cover - depends on runtime image backend
+    except Exception as exc:  # pragma: no cover - depends on runtime image backend
         png_bytes = None
+        png_error = str(exc)
 
     if png_bytes is not None:
         st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
@@ -920,10 +922,12 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
             on_click="ignore",
         )
 
+    svg_error = None
     try:
         svg_bytes = _plotly_image_bytes(fig, image_format="svg")
-    except Exception:  # pragma: no cover - depends on runtime image backend
+    except Exception as exc:  # pragma: no cover - depends on runtime image backend
         svg_bytes = None
+        svg_error = str(exc)
 
     if svg_bytes is not None:
         st.download_button(
@@ -935,6 +939,17 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
             on_click="ignore",
         )
 
+
+    if png_bytes is None and svg_bytes is None:
+        details = []
+        if png_error:
+            details.append(f"PNG: {png_error}")
+        if svg_error:
+            details.append(f"SVG: {svg_error}")
+        message = "Plot export failed for both PNG and SVG."
+        if details:
+            message = f"{message} {' | '.join(details)}"
+        st.caption(message)
 
 def _comparison_signal_options(available_comparison: list[dict[str, object]]) -> tuple[list[str], dict[str, dict[str, object]]]:
     """Build unique signal option ids for comparison UI while preserving display names."""

@@ -641,6 +641,49 @@ def test_render_plot_download_buttons_shows_friendly_message_when_static_export_
     assert captions == ["PNG/SVG export requires matplotlib in the app dependencies."]
 
 
+
+
+def test_render_plot_download_buttons_surfaces_export_errors_when_both_formats_fail(monkeypatch):
+    calls: list[dict] = []
+    captions: list[str] = []
+
+    class DummyFigure:
+        pass
+
+    class DummySt:
+        def download_button(self, **kwargs):
+            calls.append(kwargs)
+
+        def caption(self, text):
+            captions.append(str(text))
+
+        def image(self, image, caption=None, use_container_width=False):
+            return None
+
+    original_status = app._plotly_static_export_status
+    original_image_bytes = app._plotly_image_bytes
+    app._plotly_static_export_status = lambda: (True, None)
+
+    def _raise(_fig, *, image_format: str):
+        raise RuntimeError(f"{image_format} backend missing")
+
+    app._plotly_image_bytes = _raise
+    try:
+        app._render_plot_download_buttons(
+            DummySt(),
+            fig=DummyFigure(),
+            filename_stem="my_plot",
+            key_prefix="plot",
+        )
+    finally:
+        app._plotly_static_export_status = original_status
+        app._plotly_image_bytes = original_image_bytes
+
+    assert calls == []
+    assert len(captions) == 1
+    assert "Plot export failed for both PNG and SVG." in captions[0]
+    assert "PNG: png backend missing" in captions[0]
+    assert "SVG: svg backend missing" in captions[0]
 def test_comparison_signal_options_disambiguate_duplicate_signal_names():
     options, option_map = app._comparison_signal_options(
         [
