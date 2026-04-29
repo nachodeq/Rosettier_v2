@@ -898,6 +898,18 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_labels.append(label)
         if unique_labels and len(unique_labels) <= 20:
             axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
+        elif len(unique_labels) > 20:
+            axis.text(
+                0.99,
+                0.99,
+                "Legend is too big to be shown.",
+                transform=axis.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8,
+                color="#555",
+                bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none", "pad": 2.0},
+            )
 
         buffer = BytesIO()
         figure.tight_layout()
