@@ -933,7 +933,7 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
     if png_bytes is not None:
         if show_preview:
             try:
-                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=560)
+                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=680)
             except TypeError:
                 # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False)
