@@ -749,11 +749,24 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             y_axis_ref = str(getattr(trace, "yaxis", "") or "y")
             return f"{x_axis_ref}|{y_axis_ref}"
 
+        def _axis_ref_rank(axis_ref: str) -> int:
+            if len(axis_ref) <= 1:
+                return 1
+            suffix = axis_ref[1:]
+            return int(suffix) if suffix.isdigit() else 10_000
+
         subplot_keys: list[str] = []
         for trace in fig.data:
             key = _subplot_key_for_trace(trace)
             if key not in subplot_keys:
                 subplot_keys.append(key)
+        subplot_keys = sorted(
+            subplot_keys,
+            key=lambda key: (
+                _axis_ref_rank(key.split("|", maxsplit=1)[0]),
+                _axis_ref_rank(key.split("|", maxsplit=1)[1]),
+            ),
+        )
         if not subplot_keys:
             subplot_keys = ["x|y"]
 
