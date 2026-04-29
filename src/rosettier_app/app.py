@@ -1601,7 +1601,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 line={"width": 1.3},
                 hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
             )
-            fig.update_layout(height=420, width=760)
+            fig.update_layout(height=315, width=570)
             _render_plot_download_buttons(
                 st,
                 fig=fig,
@@ -1915,18 +1915,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             and plot_df[selected_color_column].nunique() > 12
                         ):
                             st.caption("Legend hidden because selected color column has many categories.")
-                        st.plotly_chart(
-                            fig,
-                            use_container_width=True,
-                            key=f"compare_features_plot_{selected_signal_slug}",
-                            config={"displayModeBar": False},
-                        )
                         _render_plot_download_buttons(
                             st,
                             fig=fig,
                             filename_stem=f"{selected_signal_slug}_{selected_feature_name}_comparison",
                             key_prefix=f"download_compare_plot_{selected_signal_slug}_{selected_feature_name}",
-                            show_preview=False,
+                            show_preview=True,
                         )
 
                         st.caption("Comparison table used for plotting")
