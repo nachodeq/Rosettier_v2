@@ -649,6 +649,54 @@ def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
     assert len(png_bytes) > 0
 
 
+
+
+def test_render_plot_download_buttons_warns_when_legend_too_large():
+    calls: list[dict] = []
+    warnings: list[str] = []
+
+    class DummyFigure:
+        def to_image(self, **kwargs):
+            fmt = kwargs["format"]
+            return f"{fmt}-bytes".encode("utf-8")
+
+    class DummySt:
+        def warning(self, text):
+            warnings.append(str(text))
+
+        def download_button(self, **kwargs):
+            calls.append(kwargs)
+
+        def image(self, *_args, **_kwargs):
+            return None
+
+        def caption(self, *_args, **_kwargs):
+            return None
+
+    original_status = app._plotly_static_export_status
+    original_bytes = app._plotly_image_bytes
+    original_large_legend = app._plot_has_large_legend
+    try:
+        app._plotly_static_export_status = lambda: (True, None)
+        app._plot_has_large_legend = lambda _fig: True
+        app._plotly_image_bytes = lambda fig, image_format: f"{image_format}-bytes".encode("utf-8")
+
+        app._render_plot_download_buttons(
+            DummySt(),
+            fig=DummyFigure(),
+            filename_stem="comparison_plot",
+            key_prefix="legend_warn",
+        )
+    finally:
+        app._plotly_static_export_status = original_status
+        app._plotly_image_bytes = original_bytes
+        app._plot_has_large_legend = original_large_legend
+
+    assert warnings == ["Legend is too big to be shown. You can still export the plot."]
+    labels = {entry["label"] for entry in calls}
+    assert labels == {"Download plot (PNG)", "Download plot (SVG)"}
+
+
 def test_render_plot_download_buttons_renders_png_and_svg_buttons():
     calls: list[dict] = []
     captions: list[str] = []
