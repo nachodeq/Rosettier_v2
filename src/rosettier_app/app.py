@@ -880,12 +880,12 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         figure.savefig(buffer, format=image_format, bbox_inches="tight")
         plt.close(figure)
         return buffer.getvalue()
-    except Exception:
+    except Exception as exc:
         if figure is not None:
             plt.close(figure)
-        if hasattr(fig, "to_image"):
-            return fig.to_image(format=image_format)
-        raise
+        raise RuntimeError(
+            f"Matplotlib-based {image_format.upper()} export failed: {exc}"
+        ) from exc
 
 
 def _plotly_static_export_status() -> tuple[bool, str | None]:
