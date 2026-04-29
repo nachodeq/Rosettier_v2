@@ -712,9 +712,16 @@ def _build_feature_comparison_figure(
 
     fig.update_layout(
         template="plotly_white",
-        margin={"l": 40, "r": 20, "t": 70, "b": 130},
-        legend={"title": color_arg or "", "tracegroupgap": 0},
-        title=f"{signal_name}: {feature_label} by {title_suffix}",
+        margin={"l": 40, "r": 20, "t": 95, "b": 130},
+        legend={
+            "title": color_arg or "",
+            "tracegroupgap": 0,
+            "yanchor": "top",
+            "y": 1.0,
+            "xanchor": "left",
+            "x": 0.0,
+        },
+        title={"text": f"{signal_name}: {feature_label} by {title_suffix}", "y": 0.995},
         height=430,
         width=760,
     )
@@ -723,7 +730,7 @@ def _build_feature_comparison_figure(
     if color_arg and plot_df[color_arg].nunique() > 12:
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
-        fig.update_layout(title=f"{signal_name}: {feature_label} points by {title_suffix} (<3 wells)")
+        fig.update_layout(title={"text": f"{signal_name}: {feature_label} points by {title_suffix} (<3 wells)", "y": 0.995})
     return fig, plot_df
 
 
@@ -960,7 +967,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
         plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
         if plot_title:
-            figure.suptitle(plot_title)
+            figure.suptitle(plot_title, y=0.995)
         x_axis = getattr(fig.layout, "xaxis", None)
         y_axis = getattr(fig.layout, "yaxis", None)
         x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
@@ -997,14 +1004,14 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 unique_handles,
                 unique_labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, 0.99),
+                bbox_to_anchor=(0.5, 0.965),
                 frameon=False,
                 ncol=min(4, max(1, len(unique_labels))),
             )
 
         buffer = BytesIO()
         if has_legend:
-            figure.tight_layout(rect=(0, 0, 1, 0.92))
+            figure.tight_layout(rect=(0, 0, 1, 0.86))
         else:
             figure.tight_layout()
         savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}

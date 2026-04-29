@@ -464,6 +464,33 @@ def test_build_feature_comparison_figure_keeps_neutral_boxplot_when_color_column
     assert scatter_groups == {"WT", "KO"}
 
 
+
+
+def test_build_feature_comparison_figure_positions_title_above_legend():
+    comparison = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "A04"],
+            "strain": ["WT", "WT", "KO", "KO"],
+            "replicate": ["r1", "r2", "r1", "r2"],
+            "feature_auc": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+
+    fig, _ = app._build_feature_comparison_figure(
+        comparison_df=comparison,
+        group_columns=["strain"],
+        feature_column="feature_auc",
+        feature_label="AUC",
+        signal_name="OD",
+        feature_name="auc",
+        color_column="replicate",
+        facet_column=None,
+    )
+
+    assert fig.layout.title.y == 0.995
+    assert fig.layout.legend.y == 1.0
+    assert fig.layout.margin.t == 95
+
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
         def to_image(self, **kwargs):
@@ -566,6 +593,91 @@ def test_plotly_image_bytes_renders_scattergl_traces(monkeypatch):
     assert len(png_bytes) > 0
     assert created_figures and created_figures[0].axis.lines == [([0.0, 1.0, 2.0], [0.1, 0.2, 0.3])]
     assert created_figures[0].axis.plot_kwargs[0]["color"] == "#4c78a8"
+
+
+
+
+def test_plotly_image_bytes_offsets_legend_below_title(monkeypatch):
+    import sys
+    import types
+    import plotly.graph_objects as go
+
+    class DummyAxis:
+        def plot(self, *_args, **_kwargs):
+            return None
+
+        def bar(self, *_args, **_kwargs):
+            return None
+
+        def boxplot(self, *_args, **_kwargs):
+            return None
+
+        def set_xticks(self, *_args, **_kwargs):
+            return None
+
+        def set_xticklabels(self, *_args, **_kwargs):
+            return None
+
+        def set_title(self, *_args, **_kwargs):
+            return None
+
+        def set_xlabel(self, *_args, **_kwargs):
+            return None
+
+        def set_ylabel(self, *_args, **_kwargs):
+            return None
+
+        def grid(self, *_args, **_kwargs):
+            return None
+
+        def get_legend_handles_labels(self):
+            return ([object()], ["All wells"])
+
+    class DummyFigure:
+        def __init__(self):
+            self.axis = DummyAxis()
+            self.suptitle_kwargs = {}
+            self.legend_kwargs = {}
+            self.tight_layout_kwargs = {}
+
+        def subplots(self, *_args, **_kwargs):
+            return [[self.axis]]
+
+        def suptitle(self, *_args, **kwargs):
+            self.suptitle_kwargs = kwargs
+
+        def legend(self, *_args, **kwargs):
+            self.legend_kwargs = kwargs
+
+        def tight_layout(self, *args, **kwargs):
+            self.tight_layout_kwargs = kwargs
+
+        def savefig(self, buffer, **_kwargs):
+            buffer.write(b"dummy-png")
+
+    created_figures: list[DummyFigure] = []
+
+    class DummyPyplot:
+        def figure(self, **_kwargs):
+            figure = DummyFigure()
+            created_figures.append(figure)
+            return figure
+
+        def close(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[0, 1], y=[1, 2], mode="lines", name="All wells"))
+    fig.update_layout(title="Raw Signal_1 curves")
+
+    _ = app._plotly_image_bytes(fig, image_format="png")
+
+    assert created_figures[0].suptitle_kwargs["y"] == 0.995
+    assert created_figures[0].legend_kwargs["bbox_to_anchor"] == (0.5, 0.965)
+    assert created_figures[0].tight_layout_kwargs["rect"] == (0, 0, 1, 0.86)
 
 
 def test_plotly_image_bytes_accepts_numpy_trace_arrays(monkeypatch):
