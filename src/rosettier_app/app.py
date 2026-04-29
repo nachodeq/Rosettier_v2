@@ -877,8 +877,17 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             axis.set_ylabel(y_axis_title)
         axis.grid(alpha=0.25)
         handles, labels = axis.get_legend_handles_labels()
-        if any(label and label != "_nolegend_" for label in labels):
-            axis.legend(loc="best", frameon=False)
+        unique_handles: list = []
+        unique_labels: list[str] = []
+        seen_labels: set[str] = set()
+        for handle, label in zip(handles, labels, strict=False):
+            if not label or label == "_nolegend_" or label in seen_labels:
+                continue
+            seen_labels.add(label)
+            unique_handles.append(handle)
+            unique_labels.append(label)
+        if unique_labels and len(unique_labels) <= 20:
+            axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
 
         buffer = BytesIO()
         figure.tight_layout()
@@ -902,7 +911,7 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
         return False, "PNG/SVG export requires matplotlib in the app dependencies."
 
 
-def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str) -> None:
+def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str, show_preview: bool = True) -> None:
     """Render export preview and static image download buttons for a Plotly figure."""
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
@@ -917,7 +926,8 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
         png_error = str(exc)
 
     if png_bytes is not None:
-        st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
+        if show_preview:
+            st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=True)
         st.download_button(
             label="Download plot (PNG)",
             data=png_bytes,
@@ -1586,12 +1596,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 line={"width": 1.3},
                 hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
             )
-            st.plotly_chart(fig, use_container_width=True, key=f"analyze_raw_curves_plot_{signal_key_slug}")
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
+                show_preview=True,
             )
 
             try:
