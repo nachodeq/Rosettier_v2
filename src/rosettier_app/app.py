@@ -744,28 +744,41 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
 
     figure = None
     try:
-        figure = plt.figure(figsize=(12, 7.2))
-        axis = figure.add_subplot(1, 1, 1)
+        def _subplot_key_for_trace(trace) -> str:
+            x_axis_ref = str(getattr(trace, "xaxis", "") or "x")
+            y_axis_ref = str(getattr(trace, "yaxis", "") or "y")
+            return f"{x_axis_ref}|{y_axis_ref}"
 
-        categorical_x = False
-        category_to_index: dict[str, int] = {}
+        subplot_keys: list[str] = []
+        for trace in fig.data:
+            key = _subplot_key_for_trace(trace)
+            if key not in subplot_keys:
+                subplot_keys.append(key)
+        if not subplot_keys:
+            subplot_keys = ["x|y"]
+
+        figure = plt.figure(figsize=(max(6.8, 4.4 * len(subplot_keys)), 7.2))
+        axes = figure.subplots(1, len(subplot_keys), squeeze=False, sharey=True)[0]
+        axis_by_subplot = {key: axes[idx] for idx, key in enumerate(subplot_keys)}
+        categorical_x_by_subplot: dict[str, bool] = {key: False for key in subplot_keys}
+        category_to_index_by_subplot: dict[str, dict[str, int]] = {key: {} for key in subplot_keys}
 
         def _as_list(values) -> list:
             if values is None:
                 return []
             return list(values)
 
-        def _x_values_to_numeric(x_values) -> list[float]:
-            nonlocal categorical_x
+        def _x_values_to_numeric(x_values, *, subplot_key: str) -> list[float]:
             values = _as_list(x_values)
             if not values:
                 return []
+            category_to_index = category_to_index_by_subplot[subplot_key]
             numeric_values: list[float] = []
             for value in values:
                 if isinstance(value, (int, float, np.number)) and not pd.isna(value):
                     numeric_values.append(float(value))
                     continue
-                categorical_x = True
+                categorical_x_by_subplot[subplot_key] = True
                 label = str(value)
                 if label not in category_to_index:
                     category_to_index[label] = len(category_to_index)
@@ -773,12 +786,17 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             return numeric_values
 
         for trace in fig.data:
+            subplot_key = _subplot_key_for_trace(trace)
+            axis = axis_by_subplot.get(subplot_key)
+            if axis is None:
+                continue
             trace_type = str(getattr(trace, "type", "")).lower()
             trace_name = str(getattr(trace, "name", "") or "")
             if trace_type == "box":
                 x_values = _as_list(getattr(trace, "x", []))
                 y_values = _as_list(getattr(trace, "y", []))
                 grouped: dict[str, list[float]] = {}
+                category_to_index = category_to_index_by_subplot[subplot_key]
                 for x_value, y_value in zip(x_values, y_values, strict=False):
                     if pd.isna(y_value):
                         continue
@@ -786,7 +804,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                     grouped.setdefault(label, []).append(float(y_value))
                     if label not in category_to_index:
                         category_to_index[label] = len(category_to_index)
-                    categorical_x = True
+                    categorical_x_by_subplot[subplot_key] = True
                 if grouped:
                     labels = list(grouped.keys())
                     positions = [category_to_index[label] for label in labels]
@@ -803,7 +821,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 continue
 
             if trace_type in {"scatter", "scattergl"}:
-                raw_x_values = _x_values_to_numeric(getattr(trace, "x", []))
+                raw_x_values = _x_values_to_numeric(getattr(trace, "x", []), subplot_key=subplot_key)
                 raw_y_values = _as_list(getattr(trace, "y", []))
                 if not raw_x_values or not raw_y_values:
                     continue
@@ -846,7 +864,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 continue
 
             if trace_type == "bar":
-                raw_x_values = _x_values_to_numeric(getattr(trace, "x", []))
+                raw_x_values = _x_values_to_numeric(getattr(trace, "x", []), subplot_key=subplot_key)
                 raw_y_values = _as_list(getattr(trace, "y", []))
                 x_values: list[float] = []
                 y_values: list[float] = []
@@ -869,24 +887,46 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                     label=trace_name if trace_name else "_nolegend_",
                 )
 
-        if categorical_x and category_to_index:
-            ordered_labels = sorted(category_to_index.items(), key=lambda pair: pair[1])
-            axis.set_xticks([position for _, position in ordered_labels])
-            axis.set_xticklabels([label for label, _ in ordered_labels], rotation=32, ha="right")
+        subplot_title_by_key: dict[str, str] = {}
+        annotations = getattr(fig.layout, "annotations", None)
+        if annotations:
+            for idx, annotation in enumerate(annotations):
+                if idx >= len(subplot_keys):
+                    break
+                title_text = str(getattr(annotation, "text", "") or "")
+                if title_text:
+                    subplot_title_by_key[subplot_keys[idx]] = title_text
+
+        for subplot_key, axis in axis_by_subplot.items():
+            category_to_index = category_to_index_by_subplot[subplot_key]
+            if categorical_x_by_subplot[subplot_key] and category_to_index:
+                ordered_labels = sorted(category_to_index.items(), key=lambda pair: pair[1])
+                axis.set_xticks([position for _, position in ordered_labels])
+                axis.set_xticklabels([label for label, _ in ordered_labels], rotation=32, ha="right")
+            facet_title = subplot_title_by_key.get(subplot_key)
+            if facet_title:
+                axis.set_title(facet_title)
 
         plot_title = str(getattr(getattr(fig.layout, "title", None), "text", "") or "")
         if plot_title:
-            axis.set_title(plot_title)
+            figure.suptitle(plot_title)
         x_axis = getattr(fig.layout, "xaxis", None)
         y_axis = getattr(fig.layout, "yaxis", None)
         x_axis_title = str(getattr(getattr(x_axis, "title", None), "text", "") or "")
         y_axis_title = str(getattr(getattr(y_axis, "title", None), "text", "") or "")
-        if x_axis_title:
-            axis.set_xlabel(x_axis_title)
-        if y_axis_title:
-            axis.set_ylabel(y_axis_title)
-        axis.grid(alpha=0.25)
-        handles, labels = axis.get_legend_handles_labels()
+        for idx, axis in enumerate(axes):
+            if x_axis_title:
+                axis.set_xlabel(x_axis_title)
+            if y_axis_title and idx == 0:
+                axis.set_ylabel(y_axis_title)
+            axis.grid(alpha=0.25)
+
+        handles: list = []
+        labels: list[str] = []
+        for axis in axes:
+            axis_handles, axis_labels = axis.get_legend_handles_labels()
+            handles.extend(axis_handles)
+            labels.extend(axis_labels)
         unique_handles: list = []
         unique_labels: list[str] = []
         seen_labels: set[str] = set()
@@ -897,7 +937,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_handles.append(handle)
             unique_labels.append(label)
         if unique_labels and len(unique_labels) <= 20:
-            axis.legend(unique_handles, unique_labels, loc="best", frameon=False)
+            axes[0].legend(unique_handles, unique_labels, loc="best", frameon=False)
 
         buffer = BytesIO()
         figure.tight_layout()
