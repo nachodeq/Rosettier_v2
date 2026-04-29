@@ -933,7 +933,7 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
     if png_bytes is not None:
         if show_preview:
             try:
-                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=560)
+                st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False, width=680)
             except TypeError:
                 # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, caption=f"{filename_stem}.png", use_container_width=False)
@@ -1569,43 +1569,46 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 group_column=resolved_group_column,
             )
 
-            import plotly.express as px
+            import plotly.graph_objects as go
 
             color_map = _metadata_color_value_map(plot_df, "metadata_label" if resolved_group_column else None)
-            if resolved_group_column:
-                color_column = "metadata_label"
-                labels = {
-                    "time": "Elapsed time (minutes)",
-                    "value": signal_name,
-                    "metadata_label": resolved_group_column,
-                }
-            else:
-                color_column = "well_color"
-                plot_df[color_column] = "All wells"
-                labels = {"time": "Elapsed time (minutes)", "value": signal_name}
-            fig = px.line(
-                plot_df,
-                x="time",
-                y="value",
-                line_group="well",
-                color=color_column,
-                color_discrete_map=color_map if resolved_group_column else {"All wells": "#4c78a8"},
-                labels=labels,
+            if not resolved_group_column:
+                color_map = {"All wells": "#4c78a8"}
+                plot_df["metadata_label"] = "All wells"
+
+            fig = go.Figure()
+            shown_groups: set[str] = set()
+            for well_name, well_df in plot_df.groupby("well", sort=True):
+                metadata_label = str(well_df["metadata_label"].iloc[0])
+                trace_color = color_map.get(metadata_label, "#4c78a8")
+                show_legend = metadata_label not in shown_groups
+                shown_groups.add(metadata_label)
+                fig.add_trace(
+                    go.Scatter(
+                        x=well_df["time"],
+                        y=well_df["value"],
+                        mode="lines",
+                        line={"color": trace_color, "width": 1.3},
+                        opacity=0.55,
+                        legendgroup=metadata_label,
+                        name=metadata_label,
+                        showlegend=show_legend,
+                        customdata=well_df[["well", "metadata_label"]].to_numpy(),
+                        hovertemplate=(
+                            f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}"
+                            + (f"<br>{resolved_group_column}: %{{customdata[1]}}" if resolved_group_column else "")
+                            + "<extra></extra>"
+                        ),
+                    )
+                )
+            fig.update_layout(
                 title=f"Raw {signal_name} curves",
-                custom_data=["well", "metadata_label"],
+                xaxis_title="Elapsed time (minutes)",
+                yaxis_title=signal_name,
+                legend_title=resolved_group_column or "",
+                height=315,
+                width=570,
             )
-            hover_tail = (
-                f"<br>{resolved_group_column}: %{{customdata[1]}}<extra></extra>"
-                if resolved_group_column
-                else "<extra></extra>"
-            )
-            fig.update_traces(
-                mode="lines",
-                opacity=0.55,
-                line={"width": 1.3},
-                hovertemplate=f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}{hover_tail}",
-            )
-            fig.update_layout(height=315, width=570)
             _render_plot_download_buttons(
                 st,
                 fig=fig,
