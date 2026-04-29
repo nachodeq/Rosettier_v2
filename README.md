@@ -8,21 +8,34 @@ Rosettier v2 is a local-first toolkit for plate-based assay workflows. It combin
 - run QC and feature extraction,
 - export analysis-ready tables and visual outputs.
 
-## Installation (local)
+## Quick start
 
-### Python package + app
+### 1) Install (local, pip)
+
+#### Python package + app
 
 ```bash
 python -m pip install --no-build-isolation -e ".[app]"
 ```
 
-### Full developer install
+#### Full developer install
 
 ```bash
-python -m pip install -e ".[dev,app,analysis]"
+python -m pip install -e ".[dev,app]"
 ```
 
-## Launch the app
+### 2) (Placeholder) Conda environment install
+
+> Conda setup placeholder (to be completed with pinned environment details).
+
+```bash
+# TODO: add official conda instructions
+# conda create -n rosettier python=3.11
+# conda activate rosettier
+# pip install -e ".[dev,app]"
+```
+
+### 3) Launch the app
 
 Preferred entrypoint:
 
@@ -43,7 +56,7 @@ python -m streamlit run src/rosettier_app/app.py
 3. **Analyze data** with QC and feature extraction (e.g., endpoint, AUC, max slope, time-to-threshold).
 4. **Export results** as tabular outputs for downstream statistics and reporting.
 
-See `docs/` for workflow-specific guidance.
+See `docs/` for step-by-step guides for every stage: installation, Rosetta creation, data loading, analysis, and exports (`docs/installation.md`, `docs/quickstart.md`, `docs/create_rosetta.md`, `docs/analyze_data.md`, `docs/input_formats.md`).
 
 ## Input file formats
 
@@ -53,11 +66,21 @@ See `docs/` for workflow-specific guidance.
 
 Detailed schema notes: `docs/input_formats.md`.
 
-## Example command (Python API)
+## Examples
+
+### Python API example (parse 384-well fixture)
 
 ```bash
-python -c "import pandas as pd; from rosettier.io import parse_plate_reader_wide; df = pd.read_csv('examples/fixtures/plate_reader_384_example.txt', sep='\t'); tidy = parse_plate_reader_wide(df, value_name='signal'); print(tidy.head())"
+python -c "import pandas as pd; from rosettier.io import parse_plate_reader_wide; df = pd.read_csv('examples/fixtures/plate_reader_384_example.txt', sep='\t'); tidy = parse_plate_reader_wide(df, plate_size=384); print(tidy.head())"
 ```
+
+### (Placeholder) Example notebooks/tutorials
+
+> TODO: add step-by-step examples for end users:
+>
+> - End-to-end 96-well analysis.
+> - End-to-end 384-well analysis.
+> - QC + export workflow.
 
 ## Citation
 
