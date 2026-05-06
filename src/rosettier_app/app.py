@@ -19,7 +19,7 @@ from rosettier.qc import qc_summary
 
 
 def _read_uploaded_table(uploaded_file) -> pd.DataFrame:
-    """Read CSV/TSV uploads without mutating app state."""
+    """Read CSV/TSV/TXT uploads without mutating app state."""
     text = uploaded_file.getvalue().decode("utf-8")
     return pd.read_csv(StringIO(text), sep=None, engine="python")
 
@@ -1468,17 +1468,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
     st.subheader("1. Rosetta source")
     rosetta_source = st.radio(
         "Choose Rosetta source",
-        options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV"],
+        options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV/TXT"],
         key="analyze_rosetta_source",
     )
     if rosetta_source == "Use current session Rosetta" and not session_rosetta_available:
         st.info("No Rosetta exists in this session yet. Switch to Create Rosetta mode or upload a Rosetta file.")
 
     layout_file = None
-    if rosetta_source == "Upload existing Rosetta CSV/TSV":
+    if rosetta_source == "Upload existing Rosetta CSV/TSV/TXT":
         layout_file = st.file_uploader(
-            "Upload Rosetta/layout file (CSV/TSV; keyed by `well`)",
-            type=["csv", "tsv"],
+            "Upload Rosetta/layout file (CSV/TSV/TXT; keyed by `well`)",
+            type=["csv", "tsv", "txt"],
             key="layout_upload",
         )
     signal_count = int(
@@ -1499,7 +1499,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
         with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
             uploaded_file = st.file_uploader(
                 f"Measurement file for signal {idx + 1} (CSV/TSV; wide format)",
-                type=["csv", "tsv"],
+                type=["csv", "tsv", "txt"],
                 key=f"analyze_measurements_upload_{idx}",
             )
             signal_name = st.text_input(
@@ -1576,7 +1576,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             layout_df: pd.DataFrame | None
             if rosetta_source == "Use current session Rosetta" and session_rosetta_available:
                 layout_df = st.session_state["rosetta_df"].copy()
-            elif rosetta_source == "Upload existing Rosetta CSV/TSV" and layout_file is not None:
+            elif rosetta_source == "Upload existing Rosetta CSV/TSV/TXT" and layout_file is not None:
                 layout_df = _read_uploaded_table(layout_file)
             else:
                 layout_df = None
