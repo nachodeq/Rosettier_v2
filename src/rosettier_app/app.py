@@ -1460,12 +1460,33 @@ def _render_analyze_data(st, plate_size: int) -> None:
     """Mode: parse one or more signals, show raw curves first, and keep QC secondary."""
     st.header("Analyze Data")
 
+    st.sidebar.markdown("### Analysis index")
+    st.sidebar.markdown(
+        "\n".join([
+            "- [1) Rosetta source](#step-1-rosetta-source)",
+            "- [2) Inputs](#step-2-inputs)",
+            "- [3) Analysis setup](#step-3-analysis-setup)",
+            "- [4) Results + export](#step-4-results-export)",
+            "- [Compare features](#compare-features)",
+        ])
+    )
+
+    st.markdown("""
+    <style>
+    .stCheckbox label, .stRadio label, .stSelectbox label, .stMultiSelect label, .stTextInput label, .stNumberInput label {
+        font-size: 1.02rem;
+        font-weight: 500;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     if "analyze_results" not in st.session_state:
         st.session_state["analyze_results"] = {}
 
     session_rosetta_available = "rosetta_df" in st.session_state
 
-    st.subheader("1. Rosetta source")
+    st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
+    st.subheader("1. Rosetta source (example: use your current session map or upload a saved Rosetta)")
     rosetta_source = st.radio(
         "Choose Rosetta source",
         options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV/TXT"],
@@ -1493,7 +1514,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
         )
     )
 
-    st.subheader("2. Inputs")
+    st.markdown('<a id="step-2-inputs"></a>', unsafe_allow_html=True)
+    st.subheader("2. Inputs (example: OD, GFP, RFP files)")
     signal_entries: list[dict[str, object]] = []
     for idx in range(signal_count):
         with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
@@ -1532,7 +1554,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 }
             )
 
-    st.subheader("3. Analysis setup")
+    st.markdown('<a id="step-3-analysis-setup"></a>', unsafe_allow_html=True)
+    st.subheader("3. Analysis setup (example: endpoint + AUC + max slope)")
     enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
     min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
@@ -1617,6 +1640,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     config = results.get("config")
 
+    st.markdown('<a id="step-4-results-export"></a>', unsafe_allow_html=True)
     st.subheader("4. Validate, parse, visualize, and export")
     if "signals" not in results:
         st.info("Configure analysis setup and click 'Run analysis'.")
@@ -1663,7 +1687,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
                     f"{tidy_df['time'].nunique()} timepoints, time range {tidy_df['time'].min()} to {tidy_df['time'].max()} minutes."
                 )
-                st.dataframe(tidy_display_df, use_container_width=True)
+                with st.expander("Show parsed table", expanded=False):
+                    st.dataframe(tidy_display_df, use_container_width=True)
                 if filtered_tidy_df is not None and len(filtered_tidy_df) != len(tidy_df):
                     st.caption(
                         f"Preview only (time-filtered tidy): {len(filtered_tidy_df)} rows after time filtering."
@@ -1672,7 +1697,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         filtered_tidy_df.head(12),
                         signal_name=signal_name,
                     )
-                    st.dataframe(filtered_preview_df, use_container_width=True)
+                    with st.expander("Show time-filtered preview table", expanded=False):
+                        st.dataframe(filtered_preview_df, use_container_width=True)
             except Exception as exc:  # pragma: no cover - defensive streamlit display
                 st.error(f"Failed to parse measurements for {signal_name}: {exc}")
                 continue
@@ -1694,7 +1720,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         f"{merged_df['time'].nunique()} timepoints, time range {merged_df['time'].min()} to {merged_df['time'].max()} minutes."
                     )
                     merged_preview_df = _rename_value_column_for_signal(merged_df, signal_name=signal_name)
-                    st.dataframe(merged_preview_df, use_container_width=True)
+                    with st.expander("Show merged table", expanded=False):
+                        st.dataframe(merged_preview_df, use_container_width=True)
                 except Exception as exc:  # pragma: no cover - defensive streamlit display
                     st.error(f"Failed to validate/merge Rosetta layout for {signal_name}: {exc}")
 
@@ -1830,10 +1857,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
             st.markdown("#### Results and export")
             st.caption("Preview only (filtered tidy)")
             filtered_display_df = _rename_value_column_for_signal(filtered_tidy_df.head(12), signal_name=signal_name)
-            st.dataframe(filtered_display_df, use_container_width=True)
+            with st.expander("Show filtered tidy preview table", expanded=False):
+                st.dataframe(filtered_display_df, use_container_width=True)
             if features_df is not None and features_df.shape[1] > 3:
                 st.caption("Preview only (features)")
-                st.dataframe(features_df.head(12), use_container_width=True)
+                with st.expander("Show features preview table", expanded=False):
+                    st.dataframe(features_df.head(12), use_container_width=True)
             tidy_export_df = _rename_value_column_for_signal(filtered_tidy_df, signal_name=signal_name)
             st.download_button(
                 label="Download tidy (CSV)",
@@ -1888,7 +1917,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
     comparison_export_df: pd.DataFrame | None = None
     comparison_export_name: str | None = None
     comparison_export_fig = None
-    st.markdown("### Compare features")
+    st.markdown('<a id="compare-features"></a>', unsafe_allow_html=True)
+    st.markdown("### Compare features (example: compare strains by endpoint)")
     available_comparison = [
         signal_result
         for signal_result in rendered_signal_results
@@ -2011,7 +2041,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             st.info("Comparison plotting requires merged Rosetta metadata columns.")
         else:
                 selected_group_columns = st.multiselect(
-                    "Grouping columns",
+                    "Grouping columns (example: strain, treatment)",
                     options=metadata_columns,
                     default=[],
                     key="compare_features_group_columns",
@@ -2021,7 +2051,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     st.info("Select at least one grouping column.")
                 else:
                     selected_color_column = st.selectbox(
-                        "Color column (optional)",
+                        "Color column (optional; example: strain)",
                         options=["None", *metadata_columns],
                         index=0,
                         key="compare_features_color_column",
@@ -2029,7 +2059,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     if selected_color_column == "None":
                         selected_color_column = None
                     selected_facet_column = st.selectbox(
-                        "Facet column (optional)",
+                        "Facet column (optional; example: medium)",
                         options=["None", *metadata_columns],
                         index=0,
                         key="compare_features_facet_column",
@@ -2109,7 +2139,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         )
 
                         st.caption("Comparison table used for plotting")
-                        st.dataframe(comparison_df, use_container_width=True)
+                        with st.expander("Show comparison table", expanded=False):
+                            st.dataframe(comparison_df, use_container_width=True)
                         comparison_export_name = (
                             f"rosettier_compare_{selected_signal_slug}_{selected_feature_name}_by_{'_'.join(selected_group_columns)}"
                         )
