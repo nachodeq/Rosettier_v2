@@ -68,6 +68,19 @@ def test_filter_tidy_by_time_window_applies_bounds_without_mutating_input():
     assert list(tidy["time"]) == [0.0, 10.0, 20.0]
 
 
+def test_cut_curves_at_time_keeps_only_points_up_to_cutoff():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A01", "A01"],
+            "time": [0.0, 10.0, 20.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._cut_curves_at_time(tidy, cut_time=10.0)
+    assert list(out["time"]) == [0.0, 10.0]
+
+
+
 def test_compute_selected_features_returns_only_requested_and_renamed_columns():
     tidy = pd.DataFrame(
         {
