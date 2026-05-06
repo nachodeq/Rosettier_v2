@@ -1462,13 +1462,40 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     st.sidebar.markdown("### Analysis index")
     st.sidebar.markdown(
-        "\n".join([
-            "- [1) Rosetta source](#step-1-rosetta-source)",
-            "- [2) Inputs](#step-2-inputs)",
-            "- [3) Analysis setup](#step-3-analysis-setup)",
-            "- [4) Results + export](#step-4-results-export)",
-            "- [Compare features](#compare-features)",
-        ])
+        """
+        <style>
+        .analysis-index {
+            display: grid;
+            gap: 0.4rem;
+            margin-top: 0.2rem;
+        }
+        .analysis-index a {
+            display: block;
+            padding: 0.45rem 0.65rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(49, 51, 63, 0.2);
+            background: rgba(49, 51, 63, 0.06);
+            color: inherit;
+            text-decoration: none !important;
+            font-size: 0.93rem;
+            line-height: 1.25;
+            transition: all 120ms ease-in-out;
+        }
+        .analysis-index a:hover {
+            border-color: rgba(49, 51, 63, 0.45);
+            background: rgba(49, 51, 63, 0.12);
+            transform: translateX(2px);
+        }
+        </style>
+        <div class="analysis-index">
+          <a href="#step-1-rosetta-source">1) Rosetta source</a>
+          <a href="#step-2-inputs">2) Inputs</a>
+          <a href="#step-3-analysis-setup">3) Analysis setup</a>
+          <a href="#step-4-results-export">4) Results + export</a>
+          <a href="#compare-features">Compare features</a>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     st.markdown("""
