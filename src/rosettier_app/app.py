@@ -1251,6 +1251,27 @@ def _metadata_columns_for_raw_curves(merged_df: pd.DataFrame | None) -> list[str
     return [column for column in merged_df.columns if column not in reserved]
 
 
+def _resolve_layout_well_column(layout_df: pd.DataFrame | None) -> str | None:
+    """Resolve layout well column name case-insensitively."""
+    if layout_df is None:
+        return None
+    for column in layout_df.columns:
+        if str(column).strip().lower() == "well":
+            return str(column)
+    return None
+
+
+def _apply_text_filter(df: pd.DataFrame, column: str, operator: str, value: str) -> pd.DataFrame:
+    """Apply string-based equality/inequality filter on one metadata column."""
+    series = df[column].astype(str).str.strip()
+    rhs = value.strip()
+    if operator == "==":
+        return df.loc[series == rhs].copy()
+    if operator == "!=":
+        return df.loc[series != rhs].copy()
+    raise ValueError(f"Unsupported operator: {operator}")
+
+
 def _prepare_raw_curve_plot_df(
     tidy_df: pd.DataFrame,
     wells_to_plot: list[str],
@@ -1627,9 +1648,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             else:
                 layout_df = None
 
-            layout_well_column = None
-            if layout_df is not None:
-                layout_well_column = "well" if "well" in layout_df.columns else "Well"
+            layout_well_column = _resolve_layout_well_column(layout_df)
 
             effective_enable_time_filter = bool(enable_time_filter)
             effective_min_time = float(min_time)
@@ -1791,9 +1810,40 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 )
                 if selected_group_column == "None":
                     selected_group_column = None
+            exclude_column = None
+            exclude_operator = "!="
+            exclude_value = ""
+            if metadata_columns:
+                exclude_column = st.selectbox(
+                    "Exclude curves by metadata (optional)",
+                    options=["None", *metadata_columns],
+                    index=0,
+                    key=f"analyze_raw_curve_exclude_column_{signal_key_slug}",
+                    help='Example: strain != "control".',
+                )
+                if exclude_column != "None":
+                    exclude_operator = st.selectbox(
+                        "Exclude operator",
+                        options=["!=", "=="],
+                        index=0,
+                        key=f"analyze_raw_curve_exclude_operator_{signal_key_slug}",
+                    )
+                    exclude_value = st.text_input(
+                        "Exclude value",
+                        value="",
+                        key=f"analyze_raw_curve_exclude_value_{signal_key_slug}",
+                    )
             resolved_group_column, group_column_warning = _resolve_raw_curve_group_column(merged_df, selected_group_column)
             if group_column_warning:
                 st.warning(group_column_warning)
+            if exclude_column not in (None, "None") and exclude_value.strip() and merged_df is not None:
+                merged_filtered = _apply_text_filter(merged_df, exclude_column, exclude_operator, exclude_value)
+                kept_wells = sorted(merged_filtered["well"].dropna().astype(str).unique().tolist())
+                wells_filtered_df = wells_filtered_df.loc[wells_filtered_df["well"].isin(kept_wells)].copy()
+                st.caption(
+                    f"Applied raw-curve filter: {exclude_column} {exclude_operator} '{exclude_value.strip()}' "
+                    f"({len(wells_filtered_df)} rows after filtering)."
+                )
             plot_df = _prepare_raw_curve_plot_df(
                 wells_filtered_df,
                 wells_to_plot=sorted(wells_filtered_df["well"].dropna().astype(str).unique().tolist()),
@@ -2094,18 +2144,25 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     if selected_facet_column == "None":
                         selected_facet_column = None
                     selected_filter_column = st.selectbox(
-                        'Filter (exact match, e.g. date == "2026-04-28")',
+                        'Filter (e.g. date == "2026-04-28" or strain != "control")',
                         options=["None", *metadata_columns],
                         index=0,
                         key="compare_features_filter_column",
                     )
+                    selected_filter_operator = "=="
                     selected_filter_value = ""
                     if selected_filter_column != "None":
+                        selected_filter_operator = st.selectbox(
+                            "Filter operator",
+                            options=["==", "!="],
+                            index=0,
+                            key="compare_features_filter_operator",
+                        )
                         selected_filter_value = st.text_input(
                             "Filter value",
                             value="",
                             key="compare_features_filter_value",
-                            help="Rows are kept when selected metadata converted to text matches this value exactly.",
+                            help="Rows are filtered by text comparison on the selected metadata column.",
                         )
                         if not selected_filter_value.strip():
                             st.info("Type a filter value to apply the metadata filter.")
@@ -2119,11 +2176,14 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         facet_column=selected_facet_column,
                     )
                     if selected_filter_column != "None" and selected_filter_value.strip():
-                        comparison_df = comparison_df.loc[
-                            comparison_df[selected_filter_column].astype(str).str.strip() == selected_filter_value.strip()
-                        ].copy()
+                        comparison_df = _apply_text_filter(
+                            comparison_df,
+                            selected_filter_column,
+                            selected_filter_operator,
+                            selected_filter_value,
+                        )
                         st.caption(
-                            f"Applied filter: {selected_filter_column} == '{selected_filter_value.strip()}' "
+                            f"Applied filter: {selected_filter_column} {selected_filter_operator} '{selected_filter_value.strip()}' "
                             f"({len(comparison_df)} rows after filtering)."
                         )
                         if comparison_df.empty:

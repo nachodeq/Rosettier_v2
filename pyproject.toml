@@ -22,7 +22,7 @@ app = [
 ]
 
 [project.scripts]
-rosettier-app = "rosettier_app.app:main"
+rosettier-app = "rosettier_app.launcher:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

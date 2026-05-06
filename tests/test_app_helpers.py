@@ -80,6 +80,22 @@ def test_cut_curves_at_time_keeps_only_points_up_to_cutoff():
     assert list(out["time"]) == [0.0, 10.0]
 
 
+def test_resolve_layout_well_column_is_case_insensitive():
+    layout = pd.DataFrame({"WELL": ["A01"], "strain": ["WT"]})
+    assert app._resolve_layout_well_column(layout) == "WELL"
+
+    layout2 = pd.DataFrame({"Well": ["A01"]})
+    assert app._resolve_layout_well_column(layout2) == "Well"
+
+
+def test_apply_text_filter_supports_equals_and_not_equals():
+    df = pd.DataFrame({"strain": ["control", "treated", "control"], "well": ["A01", "A02", "A03"]})
+    equals = app._apply_text_filter(df, "strain", "==", "control")
+    not_equals = app._apply_text_filter(df, "strain", "!=", "control")
+    assert equals["well"].tolist() == ["A01", "A03"]
+    assert not_equals["well"].tolist() == ["A02"]
+
+
 
 def test_compute_selected_features_returns_only_requested_and_renamed_columns():
     tidy = pd.DataFrame(
