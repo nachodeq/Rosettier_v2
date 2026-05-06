@@ -1,29 +1,52 @@
-# Optional Windows executable build (future support)
+# Building a standalone Windows executable (`Rosettier.exe`)
 
-Rosettier v2 is primarily supported through **conda + Python** on Linux, macOS, and Windows.
+This guide describes how maintainers can build a double-clickable `Rosettier.exe` for Windows users who do not have conda installed.
 
-A Windows `.exe` build is optional future packaging for teams that need a single-file launcher.
+## Scope
 
-## Important notes
+- The executable launches Rosettier with Streamlit in the same way as:
+  - `python -m streamlit run <app.py>`
+- Scientific processing logic and UI behavior are unchanged.
+- PyInstaller is **not** a normal runtime dependency for end users.
 
-- `.exe` packaging is **not required** for normal Rosettier use.
-- PyInstaller (or similar) should be used only by maintainers/distributors.
-- Build Windows executables on a **Windows machine** for best compatibility.
-- Do **not** add PyInstaller to normal runtime/app dependencies.
+## Prerequisites (Windows build machine)
 
-## Suggested future process (maintainers)
+1. Windows 10/11
+2. Python 3.10+
+3. Git
+4. This repository checked out locally
 
-1. Set up a clean Windows machine.
-2. Create and activate the Rosettier conda environment.
-3. Install Rosettier with app extras.
-4. Install PyInstaller locally for packaging.
-5. Build and test the executable on Windows.
-6. Distribute the output together with usage notes.
+## Build steps
 
-## Current recommendation for users
+From the repository root in PowerShell:
 
-Use the standard launch options instead:
+```powershell
+python -m pip install --upgrade pip
+python -m pip install --no-build-isolation -e ".[app,packaging]"
+pyinstaller --clean --noconfirm packaging\windows\rosettier_windows.spec
+```
 
-- `rosettier-app`
-- `run_rosettier_windows.bat`
-- `python -m streamlit run src\\rosettier_app\\app.py`
+## Expected output
+
+After a successful build, PyInstaller creates:
+
+- `dist\Rosettier.exe`
+- `build\` (intermediate artifacts)
+
+You can distribute `dist\Rosettier.exe` to Windows users. On launch, it starts the Streamlit app through the packaged launcher.
+
+## Local validation commands
+
+Before creating the executable, validate the app and tests:
+
+```powershell
+python -m pip install --no-build-isolation -e ".[app]"
+pytest -v
+```
+
+## Known limitations
+
+- Build on Windows for Windows targets (cross-compiling from Linux/macOS is not supported here).
+- First launch may be slower while PyInstaller-extracted files initialize.
+- Some endpoint security tools may warn on unsigned executables.
+- Streamlit still runs a local web server; users interact in their browser after launching `Rosettier.exe`.
