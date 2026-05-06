@@ -1498,7 +1498,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
     for idx in range(signal_count):
         with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
             uploaded_file = st.file_uploader(
-                f"Measurement file for signal {idx + 1} (CSV/TSV; wide format)",
+                f"Measurement file for signal {idx + 1} (CSV/TSV/TXT; wide format)",
                 type=["csv", "tsv", "txt"],
                 key=f"analyze_measurements_upload_{idx}",
             )
@@ -1536,8 +1536,6 @@ def _render_analyze_data(st, plate_size: int) -> None:
     enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
     min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
-    enable_curve_cut = st.checkbox("Cut curves at a specific time", value=False, key="analyze_enable_curve_cut")
-    curve_cut_time = st.number_input("Cut time (minutes)", value=1000.0, step=1.0, key="analyze_curve_cut_time")
     selected_features = st.multiselect(
         "Features to compute",
         options=["endpoint", "auc", "max_slope", "max_value", "time_to_threshold"],
@@ -1568,8 +1566,6 @@ def _render_analyze_data(st, plate_size: int) -> None:
             st.info("Upload at least one measurements file to run analysis.")
         elif enable_time_filter and min_time > max_time:
             st.error("Time filter is enabled, but min time is greater than max time.")
-        elif enable_curve_cut and curve_cut_time < 0:
-            st.error("Cut time must be non-negative.")
         elif "time_to_threshold" in selected_features and threshold is None:
             st.error("Provide a threshold when selecting time to threshold.")
         else:
@@ -1585,19 +1581,14 @@ def _render_analyze_data(st, plate_size: int) -> None:
             if layout_df is not None:
                 layout_well_column = "well" if "well" in layout_df.columns else "Well"
 
-            effective_enable_time_filter = bool(enable_time_filter or enable_curve_cut)
+            effective_enable_time_filter = bool(enable_time_filter)
             effective_min_time = float(min_time)
             effective_max_time = float(max_time)
-            if enable_curve_cut:
-                effective_min_time = 0.0
-                effective_max_time = float(curve_cut_time)
 
             config = {
                 "enable_time_filter": effective_enable_time_filter,
                 "min_time": effective_min_time,
                 "max_time": effective_max_time,
-                "enable_curve_cut": bool(enable_curve_cut),
-                "curve_cut_time": float(curve_cut_time),
                 "selected_features": selected_features,
                 "threshold": threshold,
             }
