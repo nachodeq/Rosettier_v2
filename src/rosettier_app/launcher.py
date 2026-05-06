@@ -2,16 +2,10 @@
 
 from __future__ import annotations
 
-from importlib import resources
-from pathlib import Path
 import subprocess
 import sys
 
-
-def resolve_app_path() -> Path:
-    """Resolve the installed ``app.py`` path for ``rosettier_app``."""
-    app_resource = resources.files("rosettier_app").joinpath("app.py")
-    return Path(str(app_resource))
+from rosettier_app.paths import resolve_app_path
 
 
 def main() -> None:
