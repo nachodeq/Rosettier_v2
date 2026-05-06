@@ -2,12 +2,12 @@ name: rosettier-v2
 channels:
   - conda-forge
 dependencies:
-  - python>=3.10
-  - pip
+  - python=3.10
   - pandas
   - streamlit
   - plotly
   - matplotlib
   - pytest
+  - pip
   - pip:
       - -e .[app]
