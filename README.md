@@ -1,107 +1,146 @@
 # Rosettier v2
 
-Rosettier v2 is a tool for plate-based assay workflows. It combines a reusable Python core (`rosettier`) with a Streamlit app (`rosettier_app`) to help scientists:
+Rosettier v2 is local scientific software for **plate-reader growth curve workflows**. It combines:
 
-- build or import Rosetta plate maps,
-- parse plate-reader time-series files,
-- merge measurements with plate metadata,
-- run QC and feature extraction,
-- export analysis-ready tables and visual outputs.
+- a reusable Python analysis package (`rosettier`), and
+- a local Streamlit application launcher (`rosettier-app`)
 
-## Quick start
+for creating Rosetta plate layouts, importing measurements, running exploratory analysis, and exporting analysis-ready outputs.
 
-### 1) Conda install (primary supported route)
+Rosettier is designed for reproducible local execution across Linux, macOS, and Windows (via conda/Miniforge).
 
-Use the provided environment file on Linux, macOS, or Windows:
+## Key features
+
+- Rosetta layout support for **96-well and 384-well** plates.
+- Plate-reader time-series parsing and tidy conversion.
+- Merge of measurement time-series with Rosetta metadata.
+- Core QC summaries and feature extraction (endpoint, AUC, max slope, max value, time-to-threshold).
+- Local-first workflow suitable for lab machines, shared drives, and zip/USB transfers.
+
+## Screenshots
+
+Screenshots are documented in `docs/screenshots/README.md` and should be captured from the current release UI:
+
+- App home / data-loading view
+- Rosetta layout creation view (96-well)
+- Rosetta layout creation view (384-well)
+- Analysis/QC summary view
+- Export/results view
+
+See `docs/screenshots/` for placeholder markdown files and naming conventions.
+
+## Installation
+
+### Recommended: conda/Miniforge environment
 
 ```bash
 conda env create -f environment.yml
 conda activate rosettier-v2
 ```
 
-This installs core runtime/app dependencies and performs editable install with app extras (`-e .[app]`).
-
-### 2) Alternative pip install
-
-```bash
-python -m pip install --no-build-isolation -e ".[app]"
-```
-
-Developer install:
-
-```bash
-python -m pip install -e ".[dev,app]"
-```
-
-### 3) Launch the app
-
-Preferred entrypoint:
+Then launch:
 
 ```bash
 rosettier-app
 ```
 
-Fallback launch scripts:
+### Alternative: pip editable install (local development/testing)
 
-- Linux/macOS:
+```bash
+python -m pip install --no-build-isolation -e ".[app]"
+rosettier-app
+```
 
-  ```bash
-  ./run_rosettier.sh
-  ```
+Detailed platform instructions: `docs/installation.md`.
 
-- Windows:
+## Quickstart
 
-  ```bat
-  run_rosettier_windows.bat
-  ```
+1. Launch `rosettier-app`.
+2. Create or import a Rosetta table.
+3. Import plate-reader measurement data.
+4. Run merge, QC, and feature extraction.
+5. Export tables for downstream statistical analysis.
 
-Direct Streamlit fallback:
+See `docs/quickstart.md` for a concise walkthrough.
 
-- Linux/macOS:
+## Supported platforms
 
-  ```bash
-  python -m streamlit run src/rosettier_app/app.py
-  ```
+- **Linux** (conda or pip environment)
+- **macOS** (conda or pip environment)
+- **Windows** (**Miniforge/conda recommended**)
 
-- Windows:
+Officially supported distribution methods:
 
-  ```bat
-  python -m streamlit run src\rosettier_app\app.py
-  ```
+- GitHub source release
+- zip/USB repository distribution
+- conda/Miniforge environment installation
+- local Streamlit launcher (`rosettier-app`)
 
-## Zip/USB distribution workflow
+## Workflow overview
 
-For internal offline-style handoff (for teams that still use conda):
+### 1) Create Rosetta
 
-1. Bundle repository files (zip or USB copy), including `environment.yml` and launch scripts.
-2. On target machine, extract files and open a terminal in the project directory.
-3. Create environment: `conda env create -f environment.yml`.
-4. Activate environment: `conda activate rosettier-v2`.
-5. Launch via `rosettier-app` (or fallback script).
+Build a plate map for 96- or 384-well experiments with metadata columns such as condition, strain, dose, and replicate.
 
-## Supported workflows
+### 2) Import measurements
 
-1. **Create Rosetta layouts** (96/384-well) for conditions, treatments, and metadata.
-2. **Load input data** from plate-reader exports and Rosetta tables.
-3. **Analyze data** with QC and feature extraction (e.g., endpoint, AUC, max slope, time-to-threshold).
-4. **Export results** as tabular outputs for downstream statistics and reporting.
+Load plate-reader time-series exports and parse to tidy records.
 
-See `docs/` for step-by-step guides: installation, Rosetta creation, data loading, analysis, and exports (`docs/installation.md`, `docs/quickstart.md`, `docs/create_rosetta.md`, `docs/analyze_data.md`, `docs/input_formats.md`).
+### 3) Analyze data
 
-## Input file formats
+Merge measurements with Rosetta metadata, review QC summaries, and compute derived features.
 
-- **Rosetta layout files**: `.csv` or `.tsv` with well-level metadata.
-- **Plate-reader data**: delimited text tables compatible with Rosettier parser assumptions.
-- **Output tables**: `.csv`/`.tsv` exports suitable for analysis pipelines.
+### 4) Export results
 
-Detailed schema notes: `docs/input_formats.md`.
+Export tidy time-series tables, merged tables, and feature summaries for downstream analysis.
+
+## Example input formats
+
+- Rosetta tables: `.csv`, `.tsv`
+- Plate-reader measurements: `.tsv`, `.txt` (tabular exports with well columns)
+- Export outputs: `.csv`, `.tsv`
+
+More schema guidance: `docs/input_formats.md`.
+
+## Example datasets
+
+The `examples/` folder includes reproducible sample datasets:
+
+- `96_Rosetta.tsv`
+- `96_OD_Measurements.tsv`
+- `384_Rosetta.tsv`
+- `384_OD_Measurements.tsv`
+
+Dataset descriptions: `examples/README.md`.
+
+## Releases and downloads
+
+For releases, download source from GitHub release assets or repository tags. For collaborator handoff, zip the repository and share with `environment.yml` intact.
+
+Release procedure: `docs/release_process.md`.
 
 ## Citation
 
-If you use Rosettier v2 in a publication, please cite the software release.
+If Rosettier v2 contributes to published work, cite the software metadata in `CITATION.cff`.
 
-Cite using the metadata in `CITATION.cff`. A DOI will be added once a Zenodo archive is created.
+A DOI can be added later when archival release metadata is available.
 
 ## License
 
-This project is distributed under the MIT License. See `LICENSE`.
+MIT License. See `LICENSE`.
+
+## Troubleshooting
+
+See `docs/installation.md` for common issues, including:
+
+- `conda` command not found
+- `rosettier-app` not found
+- Streamlit port already in use
+- editable install issues
+
+## Developer notes
+
+- Core reusable logic belongs in `src/rosettier/`.
+- App/UI entrypoints belong in `src/rosettier_app/`.
+- Run tests with `pytest -v` before release.
+
