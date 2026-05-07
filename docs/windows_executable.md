@@ -4,8 +4,7 @@ This guide describes how maintainers can build a double-clickable `Rosettier.exe
 
 ## Scope
 
-- The executable launches Rosettier with Streamlit in the same way as:
-  - `python -m streamlit run <app.py>`
+- The executable launches Rosettier by calling Streamlit's in-process bootstrap API (`streamlit.web.bootstrap.run`) against the bundled `app.py`.
 - Scientific processing logic and UI behavior are unchanged.
 - PyInstaller is **not** a normal runtime dependency for end users.
 
@@ -40,9 +39,25 @@ The launcher is expected to log:
 - `Starting Rosettier...`
 - resolved `app.py` path
 - Python executable path
-- full Streamlit command (`python -m streamlit run <app.py>`)
+- launcher mode note (in-process Streamlit bootstrap, no subprocess relaunch)
 
 If launch fails, the executable prints the full traceback and waits for user input before closing.
+
+
+## Why the launcher must not use `sys.executable -m streamlit` under PyInstaller
+
+In a PyInstaller-frozen app, `sys.executable` points to `Rosettier.exe` itself (not a standalone `python.exe`).
+If the launcher executes `sys.executable -m streamlit run ...`, the EXE relaunches itself recursively.
+That recursion duplicates runtime state and can trigger severe memory pressure, pagefile exhaustion, and secondary import failures (for example NumPy DLL import errors).
+
+Current launcher architecture:
+
+- resolve `app.py` with `resolve_app_path()` for both normal and frozen (`sys._MEIPASS`) modes.
+- print startup diagnostics (startup banner, resolved path, frozen mode, executable path).
+- call `streamlit.web.bootstrap.run(...)` directly in the same process.
+- on error, print traceback and wait for Enter so logs remain visible when `console=True`.
+
+This design prevents recursive self-launch and avoids spawning a second Python runtime.
 
 ## Resource guidance and memory limitations
 

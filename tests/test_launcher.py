@@ -11,18 +11,35 @@ def test_launcher_imports_and_exposes_main():
     assert callable(launcher.main)
 
 
-def test_build_command_uses_python_module_streamlit(monkeypatch):
-    monkeypatch.setattr(launcher.sys, "executable", "C:/Python/python.exe")
+def test_is_frozen_reflects_sys_flag(monkeypatch):
+    monkeypatch.setattr(launcher.sys, "frozen", True, raising=False)
+    assert launcher._is_frozen() is True
 
-    command = launcher._build_command(Path("C:/Rosettier/app.py"))
 
-    assert command == [
-        "C:/Python/python.exe",
-        "-m",
-        "streamlit",
-        "run",
-        "C:/Rosettier/app.py",
-    ]
+def test_build_bootstrap_options_defaults_empty():
+    assert launcher._build_bootstrap_options() == {}
+
+
+def test_run_streamlit_app_uses_bootstrap(monkeypatch):
+    called = {}
+
+    def fake_run(main_script_path, is_hello, args, flag_options):
+        called["main_script_path"] = main_script_path
+        called["is_hello"] = is_hello
+        called["args"] = args
+        called["flag_options"] = flag_options
+
+    monkeypatch.setattr(launcher.bootstrap, "run", fake_run)
+    monkeypatch.setattr(launcher, "_build_bootstrap_options", lambda: {"server.headless": True})
+
+    launcher._run_streamlit_app(Path("C:/Rosettier/app.py"))
+
+    assert called == {
+        "main_script_path": "C:/Rosettier/app.py",
+        "is_hello": False,
+        "args": [],
+        "flag_options": {"server.headless": True},
+    }
 
 
 def test_resolve_app_path_points_to_packaged_app():
@@ -43,43 +60,39 @@ def test_resolve_app_path_uses_meipass_when_frozen(monkeypatch, tmp_path):
     assert paths.resolve_app_path() == frozen_app
 
 
-def test_launcher_prints_debug_info_and_invokes_subprocess(monkeypatch, capsys):
+def test_launcher_prints_debug_info_and_invokes_bootstrap(monkeypatch, capsys):
     monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("C:/bundle/rosettier_app/app.py"))
-    monkeypatch.setattr(launcher.sys, "executable", "C:/Python/python.exe")
+    monkeypatch.setattr(launcher.sys, "executable", "C:/Rosettier/Rosettier.exe")
+    monkeypatch.setattr(launcher, "_is_frozen", lambda: True)
 
     called = {}
 
-    def fake_call(command):
-        called["command"] = command
-        return 0
+    def fake_run_streamlit_app(app_path):
+        called["app_path"] = app_path
 
-    monkeypatch.setattr(launcher.subprocess, "call", fake_call)
+    monkeypatch.setattr(launcher, "_run_streamlit_app", fake_run_streamlit_app)
 
-    with pytest.raises(SystemExit) as exc:
-        launcher.main()
+    launcher.main()
 
-    assert exc.value.code == 0
-    assert called["command"] == [
-        "C:/Python/python.exe",
-        "-m",
-        "streamlit",
-        "run",
-        "C:/bundle/rosettier_app/app.py",
-    ]
+    assert called["app_path"] == Path("C:/bundle/rosettier_app/app.py")
 
     output = capsys.readouterr().out
     assert "Starting Rosettier..." in output
     assert "Resolved app path: C:/bundle/rosettier_app/app.py" in output
-    assert "Python executable: C:/Python/python.exe" in output
-    assert "Standalone Streamlit executables can be memory-heavy" in output
-    assert "Executing command: C:/Python/python.exe -m streamlit run C:/bundle/rosettier_app/app.py" in output
+    assert "Running in frozen mode: True" in output
+    assert "Python executable: C:/Rosettier/Rosettier.exe" in output
+    assert "Launching Streamlit via in-process bootstrap API" in output
 
 
 def test_launcher_prints_traceback_and_waits_for_input_on_error(monkeypatch, capsys):
     monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("C:/bundle/rosettier_app/app.py"))
-    monkeypatch.setattr(launcher.sys, "executable", "C:/Python/python.exe")
+    monkeypatch.setattr(launcher.sys, "executable", "C:/Rosettier/Rosettier.exe")
 
-    monkeypatch.setattr(launcher.subprocess, "call", lambda _command: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        launcher,
+        "_run_streamlit_app",
+        lambda _app_path: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     prompted = {}
 
