@@ -11,11 +11,6 @@ def test_launcher_imports_and_exposes_main():
     assert callable(launcher.main)
 
 
-def test_is_frozen_reflects_sys_flag(monkeypatch):
-    monkeypatch.setattr(launcher.sys, "frozen", True, raising=False)
-    assert launcher._is_frozen() is True
-
-
 def test_build_bootstrap_options_defaults_empty():
     assert launcher._build_bootstrap_options() == {}
 
@@ -32,10 +27,10 @@ def test_run_streamlit_app_uses_bootstrap(monkeypatch):
     monkeypatch.setattr(launcher.bootstrap, "run", fake_run)
     monkeypatch.setattr(launcher, "_build_bootstrap_options", lambda: {"server.headless": True})
 
-    launcher._run_streamlit_app(Path("C:/Rosettier/app.py"))
+    launcher._run_streamlit_app(Path("/tmp/rosettier_app/app.py"))
 
     assert called == {
-        "main_script_path": "C:/Rosettier/app.py",
+        "main_script_path": "/tmp/rosettier_app/app.py",
         "is_hello": False,
         "args": [],
         "flag_options": {"server.headless": True},
@@ -49,21 +44,8 @@ def test_resolve_app_path_points_to_packaged_app():
     assert app_path.exists()
 
 
-def test_resolve_app_path_uses_meipass_when_frozen(monkeypatch, tmp_path):
-    frozen_app = tmp_path / "rosettier_app" / "app.py"
-    frozen_app.parent.mkdir(parents=True)
-    frozen_app.write_text("# bundled app")
-
-    monkeypatch.setattr(paths.sys, "frozen", True, raising=False)
-    monkeypatch.setattr(paths.sys, "_MEIPASS", str(tmp_path), raising=False)
-
-    assert paths.resolve_app_path() == frozen_app
-
-
 def test_launcher_prints_debug_info_and_invokes_bootstrap(monkeypatch, capsys):
-    monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("C:/bundle/rosettier_app/app.py"))
-    monkeypatch.setattr(launcher.sys, "executable", "C:/Rosettier/Rosettier.exe")
-    monkeypatch.setattr(launcher, "_is_frozen", lambda: True)
+    monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("/tmp/rosettier_app/app.py"))
 
     called = {}
 
@@ -74,19 +56,16 @@ def test_launcher_prints_debug_info_and_invokes_bootstrap(monkeypatch, capsys):
 
     launcher.main()
 
-    assert called["app_path"] == Path("C:/bundle/rosettier_app/app.py")
+    assert called["app_path"] == Path("/tmp/rosettier_app/app.py")
 
     output = capsys.readouterr().out
     assert "Starting Rosettier..." in output
-    assert "Resolved app path: C:/bundle/rosettier_app/app.py" in output
-    assert "Running in frozen mode: True" in output
-    assert "Python executable: C:/Rosettier/Rosettier.exe" in output
-    assert "Launching Streamlit via in-process bootstrap API" in output
+    assert "Resolved app path: /tmp/rosettier_app/app.py" in output
+    assert "Launching Streamlit via in-process bootstrap API." in output
 
 
 def test_launcher_prints_traceback_and_waits_for_input_on_error(monkeypatch, capsys):
-    monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("C:/bundle/rosettier_app/app.py"))
-    monkeypatch.setattr(launcher.sys, "executable", "C:/Rosettier/Rosettier.exe")
+    monkeypatch.setattr(launcher, "resolve_app_path", lambda: Path("/tmp/rosettier_app/app.py"))
 
     monkeypatch.setattr(
         launcher,

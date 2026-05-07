@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import traceback
 from pathlib import Path
 from typing import Any
@@ -16,17 +15,13 @@ def _log(message: str) -> None:
     print(message, flush=True)
 
 
-def _is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
-
-
 def _build_bootstrap_options() -> dict[str, Any]:
     """Return Streamlit flag overrides for embedded launcher mode."""
     return {}
 
 
 def _run_streamlit_app(app_path: Path) -> None:
-    """Run Streamlit directly in-process to avoid recursive PyInstaller relaunches."""
+    """Run Streamlit directly in-process."""
     bootstrap.run(
         str(app_path),
         False,
@@ -42,9 +37,7 @@ def main() -> None:
     try:
         app_path = resolve_app_path()
         _log(f"Resolved app path: {app_path}")
-        _log(f"Running in frozen mode: {_is_frozen()}")
-        _log(f"Python executable: {sys.executable}")
-        _log("Launching Streamlit via in-process bootstrap API (no subprocess relaunch).")
+        _log("Launching Streamlit via in-process bootstrap API.")
 
         _run_streamlit_app(app_path)
     except SystemExit:
