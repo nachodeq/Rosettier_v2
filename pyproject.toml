@@ -20,9 +20,6 @@ app = [
   "plotly",
   "matplotlib",
 ]
-packaging = [
-  "pyinstaller",
-]
 
 [project.scripts]
 rosettier-app = "rosettier_app.launcher:main"

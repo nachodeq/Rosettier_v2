@@ -84,6 +84,3 @@ For internal sharing without publishing a package index:
 4. Run `conda activate rosettier-v2`.
 5. Launch with `rosettier-app` (or platform fallback script).
 
-## Optional future Windows `.exe`
-
-See `docs/windows_executable.md`.

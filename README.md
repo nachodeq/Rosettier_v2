@@ -86,7 +86,7 @@ For internal offline-style handoff (for teams that still use conda):
 3. **Analyze data** with QC and feature extraction (e.g., endpoint, AUC, max slope, time-to-threshold).
 4. **Export results** as tabular outputs for downstream statistics and reporting.
 
-See `docs/` for step-by-step guides: installation, Rosetta creation, data loading, analysis, and exports (`docs/installation.md`, `docs/quickstart.md`, `docs/create_rosetta.md`, `docs/analyze_data.md`, `docs/input_formats.md`, `docs/windows_executable.md`).
+See `docs/` for step-by-step guides: installation, Rosetta creation, data loading, analysis, and exports (`docs/installation.md`, `docs/quickstart.md`, `docs/create_rosetta.md`, `docs/analyze_data.md`, `docs/input_formats.md`).
 
 ## Input file formats
 
