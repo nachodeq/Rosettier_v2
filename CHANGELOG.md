@@ -6,6 +6,12 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Changed
+- Polished README for publication-oriented release messaging, platform support, and release guidance.
+- Updated installation documentation with Linux/macOS/Windows Miniforge flows and troubleshooting.
+- Added release process and publication notes documentation for software-paper readiness.
+- Added examples documentation and screenshot placeholder structure for release assets.
+
 ## [0.2.0] - 2026-04-29
 
 ### Added
