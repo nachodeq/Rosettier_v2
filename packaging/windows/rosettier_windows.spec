@@ -2,12 +2,30 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_submodules
-
 project_root = Path(SPECPATH).resolve().parents[1]
 
 app_datas = [(str(project_root / "src" / "rosettier_app" / "app.py"), "rosettier_app")]
-hiddenimports = collect_submodules("streamlit")
+
+# Keep hidden imports focused to reduce bundle size and startup memory pressure.
+hiddenimports = ["streamlit.web.cli"]
+
+# Exclude development and heavy optional modules not required by Rosettier runtime.
+excludes = [
+    "tests",
+    "pytest",
+    "scipy",
+    "notebook",
+    "jupyter",
+    "jupyterlab",
+    "IPython",
+    "ipykernel",
+    "tkinter",
+    "matplotlib.backends.backend_qt5agg",
+    "matplotlib.backends.backend_qtagg",
+    "matplotlib.backends.backend_tkagg",
+    "matplotlib.backends.backend_wx",
+    "matplotlib.backends.backend_wxagg",
+]
 
 
 a = Analysis(
@@ -19,7 +37,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     noarchive=False,
     optimize=0,
 )

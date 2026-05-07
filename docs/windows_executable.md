@@ -26,6 +26,32 @@ python -m pip install --no-build-isolation -e ".[app,packaging]"
 pyinstaller --clean --noconfirm packaging\windows\rosettier_windows.spec
 ```
 
+## Debug-first build workflow (recommended)
+
+Start with a debug-friendly build so startup errors are visible:
+
+1. In `packaging/windows/rosettier_windows.spec`, keep `console=True`.
+2. Build and run `dist\Rosettier.exe` from a terminal first.
+3. Verify the launcher prints startup diagnostics and opens the app.
+4. Only after successful validation, optionally switch to `console=False` for end-user distribution.
+
+The launcher is expected to log:
+
+- `Starting Rosettier...`
+- resolved `app.py` path
+- Python executable path
+- full Streamlit command (`python -m streamlit run <app.py>`)
+
+If launch fails, the executable prints the full traceback and waits for user input before closing.
+
+## Resource guidance and memory limitations
+
+- Recommended build machine memory: **16 GB RAM minimum** (32 GB preferred for smoother builds).
+- Recommended target machine memory for `Rosettier.exe`: **8 GB RAM minimum**.
+- Always validate a **debug build first** (`console=True`) before any silent/windowed packaging changes.
+- If the standalone executable closes due to memory limits on user machines, distribute Rosettier via the normal conda workflow instead of the standalone EXE.
+- Known limitation: standalone Streamlit executables can be relatively heavy compared with conda-based runs.
+
 ## Expected output
 
 After a successful build, PyInstaller creates:
