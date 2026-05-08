@@ -4,12 +4,12 @@ Rosettier v2 ships with paired Rosetta layout and measurement examples for repro
 
 ## 96-well example
 
-- `96_Rosetta.tsv`: well-level Rosetta layout metadata for a 96-well plate.
+- `96_Rosetta.tsv`: Rosetta layout metadata for a 96-well plate.
 - `96_OD_Measurements.tsv`: matching optical-density time-series measurements.
 
 ## 384-well example
 
-- `384_Rosetta.tsv`: well-level Rosetta layout metadata for a 384-well plate.
+- `384_Rosetta.tsv`: Rosetta layout metadata for a 384-well plate.
 - `384_OD_Measurements.tsv`: matching optical-density time-series measurements.
 
 ## Suggested usage
