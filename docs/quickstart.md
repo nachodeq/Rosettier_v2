@@ -14,9 +14,9 @@ rosettier-app
 
 ## 3) Typical workflow
 
-1. Create or load a Rosetta layout table.
+1. Create or load a Rosetta (metadata) table.
 2. Upload plate-reader time-series data.
-3. Merge layout + measurements.
+3. Merge metadata + measurements.
 4. Review QC summaries.
 5. Extract features (endpoint, AUC, max slope, max value, time-to-threshold).
 6. Export resulting tables.

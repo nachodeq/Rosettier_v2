@@ -25,7 +25,7 @@ def _read_uploaded_table(uploaded_file) -> pd.DataFrame:
 
 
 def _build_rosetta_table(spec: PlateSpec) -> pd.DataFrame:
-    """Build base Rosetta table with canonical well coordinates."""
+    """Build base Rosetta (metadata) table with canonical well coordinates."""
     rows: list[dict[str, object]] = []
     for row in spec.rows:
         for col in spec.columns:
@@ -34,7 +34,7 @@ def _build_rosetta_table(spec: PlateSpec) -> pd.DataFrame:
 
 
 def _ordered_rosetta_columns(df: pd.DataFrame) -> list[str]:
-    """Return Rosetta columns in canonical order plus user-defined columns."""
+    """Return Rosetta (metadata) columns in canonical order plus user-defined columns."""
     base = ["well", "row", "column"]
     dynamic = [c for c in df.columns if c not in base]
     return [*base, *dynamic]
@@ -66,7 +66,7 @@ def _assign_value_to_wells(
 
 
 def _copy_rosetta_editor_plate_state(st, source_prefix: str, destination_prefix: str, destination_widget_prefix: str) -> None:
-    """Copy one plate editor's Rosetta state to another editor without mutating source state."""
+    """Copy one plate editor's Rosetta (metadata) state to another editor without mutating source state."""
     source_df_key = f"{source_prefix}_df"
     source_variables_key = f"{source_prefix}_variables"
     source_selected_key = f"{source_prefix}_selected_wells"
@@ -207,7 +207,7 @@ def _event_contains_selection_payload(event: dict | None) -> bool:
 
 
 def _init_rosetta_editor_state(st, state_prefix: str, plate_size: int) -> None:
-    """Initialize stable editor state for any Rosetta editor instance."""
+    """Initialize stable editor state for any Rosetta (metadata) editor instance."""
     variables_key = f"{state_prefix}_variables"
     plate_size_key = f"{state_prefix}_plate_size"
     df_key = f"{state_prefix}_df"
@@ -242,9 +242,9 @@ def _map_96_well_to_384_well(well: str, row_offset: int, col_offset: int) -> tup
 
 
 def _combine_four_96_rosettas(rosetta_tables: list[pd.DataFrame]) -> pd.DataFrame:
-    """Combine four 96-well Rosettas into one 384-well Rosetta via legacy mapping."""
+    """Combine four 96-well Rosetta (metadata) tables into one 384-well Rosetta (metadata) table via legacy mapping."""
     if len(rosetta_tables) != 4:
-        raise ValueError("Exactly four 96-well Rosetta tables are required.")
+        raise ValueError("Exactly four 96-well Rosetta (metadata) tables are required.")
 
     combined_rows: list[dict[str, object]] = []
     offsets = [(0, 0), (0, 1), (1, 0), (1, 1)]
@@ -277,7 +277,7 @@ def _render_rosetta_editor(
     show_table: bool = True,
     copy_sources: list[tuple[str, str]] | None = None,
 ) -> pd.DataFrame:
-    """Render a reusable Rosetta editor and return its current table."""
+    """Render a reusable Rosetta (metadata) editor and return its current table."""
     _init_rosetta_editor_state(st, state_prefix=state_prefix, plate_size=plate_size)
 
     df_key = f"{state_prefix}_df"
@@ -304,7 +304,7 @@ def _render_rosetta_editor(
                 destination_prefix=state_prefix,
                 destination_widget_prefix=widget_prefix,
             )
-            st.success(f"Copied full Rosetta setup from {selected_source_label}.")
+            st.success(f"Copied full Rosetta (metadata) setup from {selected_source_label}.")
             st.rerun()
 
     viz_options = ["None", *variables]
@@ -360,41 +360,41 @@ def _render_rosetta_editor(
 
     table_to_show = st.session_state[df_key][_ordered_rosetta_columns(st.session_state[df_key])]
     if show_table:
-        st.subheader("Current Rosetta table")
+        st.subheader("Current Rosetta (metadata) table")
         st.dataframe(table_to_show, use_container_width=True, height=320)
     return table_to_show
 
 
 def _render_create_rosetta(st, plate_size: int) -> None:
-    """Mode: create and export Rosetta metadata."""
-    st.header("Create Rosetta")
+    """Mode: create and export Rosetta (metadata)."""
+    st.header("Create Rosetta (metadata)")
     creation_mode = st.radio(
         "Creation mode",
-        options=["Direct plate creation", "Combine four 96-well Rosettas into 384"],
+        options=["Direct plate creation", "Combine four 96-well Rosetta (metadata) tables into 384"],
         key="create_mode",
     )
 
     if creation_mode == "Direct plate creation":
-        st.subheader("Rosetta editor")
+        st.subheader("Rosetta (metadata) editor")
         table_to_show = _render_rosetta_editor(st, plate_size=plate_size, state_prefix="rosetta", widget_prefix="direct")
         st.session_state["rosetta_df"] = table_to_show
 
-        st.subheader("Validate Rosetta")
+        st.subheader("Validate Rosetta (metadata)")
         try:
             validate_complete_well_set(table_to_show["well"].tolist(), plate_size=plate_size)
-            st.success("Rosetta validation passed: well set matches selected plate size.")
+            st.success("Rosetta (metadata) validation passed: well set matches selected plate size.")
         except Exception as exc:  # pragma: no cover - defensive streamlit display
-            st.error(f"Rosetta validation failed: {exc}")
+            st.error(f"Rosetta (metadata) validation failed: {exc}")
 
-        st.subheader("Export Rosetta")
+        st.subheader("Export Rosetta (metadata)")
         st.download_button(
-            label="Download Rosetta (CSV)",
+            label="Download Rosetta (metadata) (CSV)",
             data=table_to_show.to_csv(index=False),
             file_name=f"rosetta_layout_{plate_size}.csv",
             mime="text/csv",
         )
         st.download_button(
-            label="Download Rosetta (TSV)",
+            label="Download Rosetta (metadata) (TSV)",
             data=table_to_show.to_csv(index=False, sep="\t"),
             file_name=f"rosetta_layout_{plate_size}.tsv",
             mime="text/tab-separated-values",
@@ -411,7 +411,7 @@ def _render_create_rosetta(st, plate_size: int) -> None:
     tabs = st.tabs(tab_labels)
     for idx, tab in enumerate(tabs, start=1):
         with tab:
-            st.subheader(f"Rosetta editor for Plate {idx}")
+            st.subheader(f"Rosetta (metadata) editor for Plate {idx}")
             copy_sources = [
                 (f"Plate {source_idx}", f"combine_plate_{source_idx}")
                 for source_idx in range(1, 5)
@@ -425,41 +425,41 @@ def _render_create_rosetta(st, plate_size: int) -> None:
                 copy_sources=copy_sources,
             )
 
-    if st.button("Combine into 384 Rosetta", key="combine_rosettas_384"):
+    if st.button("Combine into 384 Rosetta (metadata)", key="combine_rosettas_384"):
         try:
             combined_df = _combine_four_96_rosettas(
                 [st.session_state[f"combine_plate_{idx}_df"] for idx in range(1, 5)]
             )
             st.session_state["combined_384_df"] = combined_df
             st.session_state["rosetta_df"] = combined_df
-            st.success("Combined 384 Rosetta created successfully.")
+            st.success("Combined 384 Rosetta (metadata) created successfully.")
         except Exception as exc:  # pragma: no cover - defensive streamlit display
-            st.error(f"Failed to combine 96-well Rosettas: {exc}")
+            st.error(f"Failed to combine 96-well Rosetta (metadata) tables: {exc}")
 
     if "combined_384_df" not in st.session_state:
-        st.info("Create/edit all four 96-well Rosettas, then click 'Combine into 384 Rosetta'.")
+        st.info("Create/edit all four 96-well Rosetta (metadata) tables, then click 'Combine into 384 Rosetta (metadata)'.")
         return
 
     combined_df = st.session_state["combined_384_df"][_ordered_rosetta_columns(st.session_state["combined_384_df"])]
-    st.subheader("Combined 384 Rosetta preview")
+    st.subheader("Combined 384 Rosetta (metadata) preview")
     st.dataframe(combined_df, use_container_width=True, height=360)
 
-    st.subheader("Validate combined 384 Rosetta")
+    st.subheader("Validate combined 384 Rosetta (metadata)")
     try:
         validate_complete_well_set(combined_df["well"].tolist(), plate_size=384)
-        st.success("Combined Rosetta validation passed: complete 384 well set.")
+        st.success("Combined Rosetta (metadata) validation passed: complete 384 well set.")
     except Exception as exc:  # pragma: no cover - defensive streamlit display
-        st.error(f"Combined Rosetta validation failed: {exc}")
+        st.error(f"Combined Rosetta (metadata) validation failed: {exc}")
 
-    st.subheader("Export combined 384 Rosetta")
+    st.subheader("Export combined 384 Rosetta (metadata)")
     st.download_button(
-        label="Download combined 384 Rosetta (CSV)",
+        label="Download combined 384 Rosetta (metadata) (CSV)",
         data=combined_df.to_csv(index=False),
         file_name="rosetta_layout_384_combined.csv",
         mime="text/csv",
     )
     st.download_button(
-        label="Download combined 384 Rosetta (TSV)",
+        label="Download combined 384 Rosetta (metadata) (TSV)",
         data=combined_df.to_csv(index=False, sep="\t"),
         file_name="rosetta_layout_384_combined.tsv",
         mime="text/tab-separated-values",
@@ -1509,7 +1509,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
         }
         </style>
         <div class="analysis-index">
-          <a href="#step-1-rosetta-source">1) Rosetta source</a>
+          <a href="#step-1-rosetta-source">1) Rosetta (metadata) source</a>
           <a href="#step-2-inputs">2) Inputs</a>
           <a href="#step-3-analysis-setup">3) Analysis setup</a>
           <a href="#step-4-results-export">4) Results + export</a>
@@ -1534,19 +1534,19 @@ def _render_analyze_data(st, plate_size: int) -> None:
     session_rosetta_available = "rosetta_df" in st.session_state
 
     st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
-    st.subheader("1. Rosetta source (example: use your current session map or upload a saved Rosetta)")
+    st.subheader("1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata))")
     rosetta_source = st.radio(
-        "Choose Rosetta source",
-        options=["Use current session Rosetta", "Upload existing Rosetta CSV/TSV/TXT"],
+        "Choose Rosetta (metadata) source",
+        options=["Use current session Rosetta (metadata)", "Upload existing Rosetta (metadata) CSV/TSV/TXT"],
         key="analyze_rosetta_source",
     )
-    if rosetta_source == "Use current session Rosetta" and not session_rosetta_available:
-        st.info("No Rosetta exists in this session yet. Switch to Create Rosetta mode or upload a Rosetta file.")
+    if rosetta_source == "Use current session Rosetta (metadata)" and not session_rosetta_available:
+        st.info("No Rosetta (metadata) exists in this session yet. Switch to Create Rosetta (metadata) mode or upload a Rosetta (metadata) file.")
 
     layout_file = None
-    if rosetta_source == "Upload existing Rosetta CSV/TSV/TXT":
+    if rosetta_source == "Upload existing Rosetta (metadata) CSV/TSV/TXT":
         layout_file = st.file_uploader(
-            "Upload Rosetta/layout file (CSV/TSV/TXT; keyed by `well`)",
+            "Upload Rosetta (metadata) file (CSV/TSV/TXT; keyed by `well`)",
             type=["csv", "tsv", "txt"],
             key="layout_upload",
         )
@@ -1641,9 +1641,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
             st.error("Provide a threshold when selecting time to threshold.")
         else:
             layout_df: pd.DataFrame | None
-            if rosetta_source == "Use current session Rosetta" and session_rosetta_available:
+            if rosetta_source == "Use current session Rosetta (metadata)" and session_rosetta_available:
                 layout_df = st.session_state["rosetta_df"].copy()
-            elif rosetta_source == "Upload existing Rosetta CSV/TSV/TXT" and layout_file is not None:
+            elif rosetta_source == "Upload existing Rosetta (metadata) CSV/TSV/TXT" and layout_file is not None:
                 layout_df = _read_uploaded_table(layout_file)
             else:
                 layout_df = None
@@ -1769,7 +1769,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     with st.expander("Show merged table", expanded=False):
                         st.dataframe(merged_preview_df, use_container_width=True)
                 except Exception as exc:  # pragma: no cover - defensive streamlit display
-                    st.error(f"Failed to validate/merge Rosetta layout for {signal_name}: {exc}")
+                    st.error(f"Failed to validate/merge Rosetta (metadata) for {signal_name}: {exc}")
 
             st.markdown("#### Raw curves")
             available_wells = sorted(filtered_tidy_df["well"].dropna().astype(str).unique().tolist())
@@ -2115,7 +2115,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
         metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
         if not metadata_columns:
-            st.info("Comparison plotting requires merged Rosetta metadata columns.")
+            st.info("Comparison plotting requires merged Rosetta (metadata) columns.")
         else:
                 selected_group_columns = st.multiselect(
                     "Grouping columns (example: strain, treatment)",
@@ -2275,9 +2275,9 @@ def main() -> None:
 
     st.sidebar.header("Settings")
     plate_size = st.sidebar.selectbox("Plate size", options=[96, 384], index=0, key="sidebar_plate_size")
-    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta", "Analyze Data"], index=0, key="sidebar_mode")
+    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta (metadata)", "Analyze Data"], index=0, key="sidebar_mode")
 
-    if mode == "Create Rosetta":
+    if mode == "Create Rosetta (metadata)":
         _render_create_rosetta(st, plate_size=plate_size)
     else:
         _render_analyze_data(st, plate_size=plate_size)

@@ -2,12 +2,12 @@
 
 ## Intended software-paper positioning
 
-Rosettier v2 should be positioned as local, reproducible software for plate-reader growth curve analysis with explicit support for Rosetta layout generation, metadata-aware integration, and exploratory feature extraction.
+Rosettier v2 should be positioned as local, reproducible software for plate-reader growth curve analysis with explicit support for Rosetta (metadata) generation, metadata-aware integration, and exploratory feature extraction.
 
 ## Likely manuscript figures
 
-1. End-to-end workflow schematic (Rosetta creation -> import -> analysis -> export).
-2. Example 96-well Rosetta map and corresponding time-series summary.
+1. End-to-end workflow schematic (Rosetta (metadata) creation -> import -> analysis -> export).
+2. Example 96-well Rosetta (metadata) map and corresponding time-series summary.
 3. Example 384-well analysis output and per-condition feature comparison.
 4. Reproducibility figure showing identical outputs across Linux/macOS/Windows environments.
 

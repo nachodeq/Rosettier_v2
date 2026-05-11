@@ -1,6 +1,6 @@
-# Create Rosetta Layouts
+# Create Rosetta (metadata)
 
-Rosettier supports creating Rosetta tables for 96- and 384-well plates.
+Rosettier supports creating Rosetta (metadata) tables for 96- and 384-well plates.
 
 ## In the app
 

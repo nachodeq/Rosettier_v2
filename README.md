@@ -5,15 +5,15 @@ Rosettier v2 is an open source tool for **plate-reader growth curve workflows**.
 - a reusable Python analysis package (`rosettier`), and
 - a local Streamlit application launcher (`rosettier-app`)
 
-for creating Rosetta plate layouts, importing measurements, running exploratory analysis, and exporting analysis-ready outputs.
+for creating Rosetta (metadata) plate maps, importing measurements, running exploratory analysis, and exporting analysis-ready outputs.
 
 Rosettier is designed for reproducible local execution across Linux, macOS, and Windows (via conda/Miniforge).
 
 ## Key features
 
-- Rosetta layout support for **96-well and 384-well** plates.
+- Rosetta (metadata) support for **96-well and 384-well** plates.
 - Plate-reader time-series parsing and tidy conversion.
-- Merge of measurement time-series with Rosetta metadata.
+- Merge of measurement time-series with Rosetta (metadata).
 - Core QC summaries and feature extraction (endpoint, AUC, max slope, max value, time-to-threshold).
 - Local-first workflow suitable for lab machines, shared drives, and zip/USB transfers.
 
@@ -22,8 +22,8 @@ Rosettier is designed for reproducible local execution across Linux, macOS, and 
 Screenshots are documented in `docs/screenshots/README.md` and should be captured from the current release UI:
 
 - App home / data-loading view
-- Rosetta layout creation view (96-well)
-- Rosetta layout creation view (384-well)
+- Rosetta (metadata) creation view (96-well)
+- Rosetta (metadata) creation view (384-well)
 - Analysis/QC summary view
 - Export/results view
 
@@ -56,7 +56,7 @@ Detailed platform instructions: `docs/installation.md`.
 ## Quickstart
 
 1. Launch `rosettier-app`.
-2. Create or import a Rosetta table.
+2. Create or import a Rosetta (metadata) table.
 3. Import plate-reader measurement data.
 4. Run merge, QC, and feature extraction.
 5. Export tables for downstream statistical analysis.
@@ -78,7 +78,7 @@ Officially supported distribution methods:
 
 ## Workflow overview
 
-### 1) Create Rosetta
+### 1) Create Rosetta (metadata)
 
 Build a plate map for 96- or 384-well experiments with metadata columns such as condition, strain, dose, and replicate.
 
@@ -88,7 +88,7 @@ Load plate-reader time-series exports and parse to tidy records.
 
 ### 3) Analyze data
 
-Merge measurements with Rosetta metadata, review QC summaries, and compute derived features.
+Merge measurements with Rosetta (metadata), review QC summaries, and compute derived features.
 
 ### 4) Export results
 
@@ -96,7 +96,7 @@ Export tidy time-series tables, merged tables, and feature summaries for downstr
 
 ## Example input formats
 
-- Rosetta tables: `.csv`, `.tsv`
+- Rosetta (metadata) tables: `.csv`, `.tsv`
 - Plate-reader measurements: `.tsv`, `.txt` (tabular exports with well columns)
 - Export outputs: `.csv`, `.tsv`
 

@@ -1,11 +1,11 @@
 # Input Formats
 
-## Rosetta layout table
+## Rosetta (metadata) table
 
 Expected as CSV/TSV with at minimum:
 
 - `well` (e.g., `A01`, `H12`, `P24`)
-- plate coordinates (`row`, `column`) for layout-aware workflows
+- plate coordinates (`row`, `column`) for metadata-aware workflows
 - any number of additional metadata columns (e.g., strain, treatment, dose)
 
 ## Plate-reader table
