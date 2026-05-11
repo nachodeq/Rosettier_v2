@@ -9,7 +9,7 @@ from .plates import PlateSpec, validate_complete_well_set
 
 
 def load_layout(df: pd.DataFrame, plate_size: int, well_col: str = "well") -> pd.DataFrame:
-    """Load and validate layout metadata keyed by well.
+    """Load and validate Rosetta (metadata) keyed by well.
 
     Returns a copy sorted by canonical well name.
     """
@@ -32,7 +32,7 @@ def merge_measurements_with_layout(
     measurement_well_col: str = "well",
     layout_well_col: str = "well",
 ) -> pd.DataFrame:
-    """Merge long measurements with validated layout metadata."""
+    """Merge long measurements with validated Rosetta (metadata)."""
     if measurement_well_col not in measurements_long.columns:
         raise KeyError(f"Missing measurement well column: {measurement_well_col}")
 
