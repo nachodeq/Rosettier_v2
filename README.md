@@ -1,6 +1,6 @@
 # Rosettier v2
 
-Rosettier v2 is local scientific software for **plate-reader growth curve workflows**. It combines:
+Rosettier v2 is an open source tool for **plate-reader growth curve workflows**. It combines:
 
 - a reusable Python analysis package (`rosettier`), and
 - a local Streamlit application launcher (`rosettier-app`)
