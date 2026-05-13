@@ -1011,7 +1011,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             seen_labels.add(label)
             unique_handles.append(handle)
             unique_labels.append(label)
-        has_legend = bool(unique_labels and len(unique_labels) <= 20)
+        has_legend = bool(unique_labels and len(unique_labels) <= 40)
         if has_legend and hasattr(figure, "legend"):
             figure.legend(
                 unique_handles,
@@ -1019,7 +1019,9 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 loc="upper center",
                 bbox_to_anchor=(0.5, 0.965),
                 frameon=False,
-                ncol=min(4, max(1, len(unique_labels))),
+                ncol=min(6, max(1, len(unique_labels))),
+                prop={"size": 8},
+                labelcolor="#000000",
             )
 
         buffer = BytesIO()
@@ -1055,7 +1057,7 @@ def _plotly_static_export_status() -> tuple[bool, str | None]:
 
 
 
-def _plot_has_large_legend(fig, *, limit: int = 20) -> bool:
+def _plot_has_large_legend(fig, *, limit: int = 40) -> bool:
     """Return True when the plot contains more unique legend labels than the supported limit."""
     seen_labels: set[str] = set()
     for trace in getattr(fig, "data", []):
@@ -1092,8 +1094,14 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
 
     if png_bytes is not None:
         if show_preview:
+            preview_width = getattr(getattr(fig, "layout", None), "width", None)
+            if not isinstance(preview_width, int) or preview_width <= 0:
+                preview_width = None
             try:
-                st.image(png_bytes, use_container_width=False, width=1360)
+                if preview_width is None:
+                    st.image(png_bytes, use_container_width=False)
+                else:
+                    st.image(png_bytes, use_container_width=False, width=preview_width)
             except TypeError:
                 # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, use_container_width=False)
@@ -1868,18 +1876,18 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             plot_height = st.slider(
                 "Plot height (px)",
-                min_value=220,
-                max_value=460,
-                value=260,
-                step=10,
+                min_value=320,
+                max_value=980,
+                value=620,
+                step=20,
                 key=f"analyze_raw_curve_height_{signal_key_slug}",
             )
             plot_width = st.slider(
                 "Plot width (px)",
-                min_value=380,
-                max_value=900,
-                value=520,
-                step=10,
+                min_value=700,
+                max_value=2000,
+                value=1280,
+                step=20,
                 key=f"analyze_raw_curve_width_{signal_key_slug}",
             )
 
@@ -1906,7 +1914,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             showlegend=show_legend,
                             customdata=well_df[["well", "metadata_label"]].to_numpy(),
                             hovertemplate=(
-                                f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}"
+                                f"Well: %{{customdata[0]}}"
                                 + (f"<br>{resolved_group_column}: %{{customdata[1]}}" if resolved_group_column else "")
                                 + "<extra></extra>"
                             ),
@@ -1932,7 +1940,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             name=f"{metadata_label} (mean)",
                             showlegend=True,
                             hovertemplate=(
-                                f"Group: {metadata_label}<br>Time (min): %{{x:.3f}}<br>Mean {signal_name}: %{{y:.5g}}"
+                                f"Group: {metadata_label}<br>Mean curve"
                                 + "<extra></extra>"
                             ),
                         )
@@ -1943,16 +1951,29 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 xaxis_title="Elapsed time (minutes)",
                 yaxis_title=signal_name,
                 legend_title=resolved_group_column or "Curve",
+                legend={"font": {"color": "#000000"}, "title": {"font": {"color": "#000000"}}},
                 height=plot_height,
                 width=plot_width,
-                hovermode="x unified",
+                hovermode="closest",
+                template="plotly_white",
+                paper_bgcolor="#ffffff",
+                plot_bgcolor="#ffffff",
+                font={"color": "#000000"},
+            )
+            fig.update_xaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
+            fig.update_yaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
+            plot_render_key = f"raw_curves_plot_{signal_key_slug}_{datetime.now(timezone.utc).timestamp():.6f}"
+            st.plotly_chart(
+                fig,
+                use_container_width=False,
+                key=plot_render_key,
             )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=True,
+                show_preview=False,
             )
 
             try:
