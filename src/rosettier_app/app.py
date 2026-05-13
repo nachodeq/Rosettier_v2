@@ -1092,8 +1092,14 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
 
     if png_bytes is not None:
         if show_preview:
+            preview_width = getattr(getattr(fig, "layout", None), "width", None)
+            if not isinstance(preview_width, int) or preview_width <= 0:
+                preview_width = None
             try:
-                st.image(png_bytes, use_container_width=False, width=1360)
+                if preview_width is None:
+                    st.image(png_bytes, use_container_width=False)
+                else:
+                    st.image(png_bytes, use_container_width=False, width=preview_width)
             except TypeError:
                 # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, use_container_width=False)
