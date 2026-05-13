@@ -1858,38 +1858,94 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 color_map = {"All wells": "#4c78a8"}
                 plot_df["metadata_label"] = "All wells"
 
+            raw_curve_view = st.radio(
+                "Raw curve display",
+                options=["Per well", "Group average", "Both"],
+                index=2 if resolved_group_column else 0,
+                horizontal=True,
+                key=f"analyze_raw_curve_view_mode_{signal_key_slug}",
+                help="Use Group average to reduce visual clutter and compare factors directly.",
+            )
+            plot_height = st.slider(
+                "Plot height (px)",
+                min_value=220,
+                max_value=460,
+                value=260,
+                step=10,
+                key=f"analyze_raw_curve_height_{signal_key_slug}",
+            )
+            plot_width = st.slider(
+                "Plot width (px)",
+                min_value=380,
+                max_value=900,
+                value=520,
+                step=10,
+                key=f"analyze_raw_curve_width_{signal_key_slug}",
+            )
+
             fig = go.Figure()
             shown_groups: set[str] = set()
-            for well_name, well_df in plot_df.groupby("well", sort=True):
-                metadata_label = str(well_df["metadata_label"].iloc[0])
-                trace_color = color_map.get(metadata_label, "#4c78a8")
-                show_legend = metadata_label not in shown_groups
-                shown_groups.add(metadata_label)
-                fig.add_trace(
-                    go.Scatter(
-                        x=well_df["time"],
-                        y=well_df["value"],
-                        mode="lines",
-                        line={"color": trace_color, "width": 1.3},
-                        opacity=0.55,
-                        legendgroup=metadata_label,
-                        name=metadata_label,
-                        showlegend=show_legend,
-                        customdata=well_df[["well", "metadata_label"]].to_numpy(),
-                        hovertemplate=(
-                            f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}"
-                            + (f"<br>{resolved_group_column}: %{{customdata[1]}}" if resolved_group_column else "")
-                            + "<extra></extra>"
-                        ),
+            include_per_well = raw_curve_view in {"Per well", "Both"}
+            include_group_average = raw_curve_view in {"Group average", "Both"} and resolved_group_column is not None
+
+            if include_per_well:
+                for well_name, well_df in plot_df.groupby("well", sort=True):
+                    metadata_label = str(well_df["metadata_label"].iloc[0])
+                    trace_color = color_map.get(metadata_label, "#4c78a8")
+                    show_legend = metadata_label not in shown_groups
+                    shown_groups.add(metadata_label)
+                    fig.add_trace(
+                        go.Scatter(
+                            x=well_df["time"],
+                            y=well_df["value"],
+                            mode="lines",
+                            line={"color": trace_color, "width": 1.1},
+                            opacity=0.35 if include_group_average else 0.55,
+                            legendgroup=metadata_label,
+                            name=metadata_label,
+                            showlegend=show_legend,
+                            customdata=well_df[["well", "metadata_label"]].to_numpy(),
+                            hovertemplate=(
+                                f"Well: %{{customdata[0]}}<br>Time (min): %{{x:.3f}}<br>{signal_name}: %{{y:.5g}}"
+                                + (f"<br>{resolved_group_column}: %{{customdata[1]}}" if resolved_group_column else "")
+                                + "<extra></extra>"
+                            ),
+                        )
                     )
+
+            if include_group_average:
+                grouped_df = (
+                    plot_df.groupby(["metadata_label", "time"], as_index=False)["value"]
+                    .mean()
+                    .sort_values(["metadata_label", "time"])
                 )
+                for metadata_label, group_df in grouped_df.groupby("metadata_label", sort=True):
+                    trace_color = color_map.get(str(metadata_label), "#4c78a8")
+                    fig.add_trace(
+                        go.Scatter(
+                            x=group_df["time"],
+                            y=group_df["value"],
+                            mode="lines",
+                            line={"color": trace_color, "width": 3.0},
+                            opacity=0.95,
+                            legendgroup=str(metadata_label),
+                            name=f"{metadata_label} (mean)",
+                            showlegend=True,
+                            hovertemplate=(
+                                f"Group: {metadata_label}<br>Time (min): %{{x:.3f}}<br>Mean {signal_name}: %{{y:.5g}}"
+                                + "<extra></extra>"
+                            ),
+                        )
+                    )
+
             fig.update_layout(
                 title=f"Raw {signal_name} curves",
                 xaxis_title="Elapsed time (minutes)",
                 yaxis_title=signal_name,
-                legend_title=resolved_group_column or "",
-                height=315,
-                width=570,
+                legend_title=resolved_group_column or "Curve",
+                height=plot_height,
+                width=plot_width,
+                hovermode="x unified",
             )
             _render_plot_download_buttons(
                 st,
