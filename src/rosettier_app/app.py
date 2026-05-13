@@ -1104,9 +1104,7 @@ def _plot_has_large_legend(fig, *, limit: int = 20) -> bool:
 
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str, show_preview: bool = True) -> None:
-    """Render export preview and static image download buttons for a Plotly figure."""
-    if show_preview and hasattr(st, "plotly_chart"):
-        st.plotly_chart(fig, use_container_width=False)
+    """Render static export preview and image download buttons for a Plotly figure."""
 
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
@@ -1991,18 +1989,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             fig.update_xaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
             fig.update_yaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
-            plot_render_key = f"raw_curves_plot_{signal_key_slug}_{datetime.now(timezone.utc).timestamp():.6f}"
-            st.plotly_chart(
-                fig,
-                use_container_width=False,
-                key=plot_render_key,
-            )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=False,
+                show_preview=True,
             )
 
             try:
@@ -2307,21 +2299,15 @@ def _render_analyze_data(st, plate_size: int) -> None:
                                 f"Selected grouping has {category_count} categories; the plot may be crowded."
                             )
 
-                        point_marker_size = st.slider(
-                            "Point size",
+                        plot_size = st.slider(
+                            "Size",
                             min_value=4,
                             max_value=18,
                             value=8,
-                            key=f"compare_point_size_{selected_signal_slug}_{selected_feature_name}",
+                            key=f"compare_plot_size_{selected_signal_slug}_{selected_feature_name}",
                         )
-                        box_line_width = st.slider(
-                            "Box line width",
-                            min_value=0.5,
-                            max_value=3.0,
-                            value=1.1,
-                            step=0.1,
-                            key=f"compare_box_line_width_{selected_signal_slug}_{selected_feature_name}",
-                        )
+                        point_marker_size = plot_size
+                        box_line_width = max(0.5, round(plot_size / 8.0, 1))
 
                         fig, plot_df = _build_feature_comparison_figure(
                             comparison_df=comparison_df,
