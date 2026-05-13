@@ -1092,8 +1092,14 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
 
     if png_bytes is not None:
         if show_preview:
+            preview_width = getattr(getattr(fig, "layout", None), "width", None)
+            if not isinstance(preview_width, int) or preview_width <= 0:
+                preview_width = None
             try:
-                st.image(png_bytes, use_container_width=False, width=1360)
+                if preview_width is None:
+                    st.image(png_bytes, use_container_width=False)
+                else:
+                    st.image(png_bytes, use_container_width=False, width=preview_width)
             except TypeError:
                 # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, use_container_width=False)
@@ -1947,12 +1953,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 width=plot_width,
                 hovermode="x unified",
             )
+            st.plotly_chart(
+                fig,
+                use_container_width=False,
+                key=f"raw_curves_plot_{signal_key_slug}",
+            )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=True,
+                show_preview=False,
             )
 
             try:
