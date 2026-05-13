@@ -1955,16 +1955,15 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 template="plotly_white",
                 paper_bgcolor="#ffffff",
                 plot_bgcolor="#ffffff",
+                font={"color": "#000000"},
             )
+            fig.update_xaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
+            fig.update_yaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
+            plot_render_key = f"raw_curves_plot_{signal_key_slug}_{datetime.now(timezone.utc).timestamp():.6f}"
             st.plotly_chart(
                 fig,
                 use_container_width=False,
-                key=f"raw_curves_plot_{signal_key_slug}",
-            )
-            st.plotly_chart(
-                fig,
-                use_container_width=False,
-                key=f"raw_curves_plot_{signal_key_slug}",
+                key=plot_render_key,
             )
             _render_plot_download_buttons(
                 st,
