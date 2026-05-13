@@ -574,6 +574,8 @@ def _build_feature_comparison_figure(
     feature_name: str,
     color_column: str | None,
     facet_column: str | None,
+    point_marker_size: int = 8,
+    box_line_width: float = 1.1,
 ):
     """Build the Plotly figure used by both preview and all export formats."""
     import plotly.graph_objects as go
@@ -643,7 +645,7 @@ def _build_feature_comparison_figure(
                     legendgroup="boxplot",
                     showlegend=col_idx == 1,
                     marker={"color": "#6e6e6e"},
-                    line={"color": "#6e6e6e", "width": 1.1},
+                    line={"color": "#6e6e6e", "width": box_line_width},
                     fillcolor="rgba(110, 110, 110, 0.15)",
                     boxpoints=False,
                     hoverinfo="skip",
@@ -663,7 +665,7 @@ def _build_feature_comparison_figure(
                         name=str(color_value),
                         legendgroup=f"points_{color_value}",
                         showlegend=col_idx == 1,
-                        marker={"size": 8, "opacity": 0.85, "color": color_map[str(color_value)]},
+                        marker={"size": point_marker_size, "opacity": 0.85, "color": color_map[str(color_value)]},
                         customdata=color_df[["well", group_label_column, color_arg]].to_numpy(),
                         hovertemplate=(
                             "Well: %{customdata[0]}<br>"
@@ -684,7 +686,7 @@ def _build_feature_comparison_figure(
                     name="Replicates",
                     legendgroup="points",
                     showlegend=False,
-                    marker={"size": 8, "opacity": 0.85, "color": "#4c78a8"},
+                    marker={"size": point_marker_size, "opacity": 0.85, "color": "#4c78a8"},
                     customdata=facet_df[["well", group_label_column]].to_numpy(),
                     hovertemplate=(
                         "Well: %{customdata[0]}<br>"
@@ -715,13 +717,16 @@ def _build_feature_comparison_figure(
             "y": 1.0,
             "xanchor": "left",
             "x": 0.0,
+            "font": {"color": "#000000"},
+            "title_font": {"color": "#000000"},
         },
-        title={"text": f"{signal_name}: {feature_label} by {title_suffix}", "y": 0.995},
+        title={"text": f"{signal_name}: {feature_label} by {title_suffix}", "y": 0.995, "font": {"color": "#000000"}},
+        font={"color": "#000000"},
         height=430,
         width=760,
     )
-    fig.update_xaxes(title=" + ".join(group_columns))
-    fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec")
+    fig.update_xaxes(title=" + ".join(group_columns), tickfont={"color": "#000000"}, title_font={"color": "#000000"})
+    fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec", tickfont={"color": "#000000"}, title_font={"color": "#000000"})
     if color_arg and plot_df[color_arg].nunique() > 12:
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
@@ -2275,6 +2280,22 @@ def _render_analyze_data(st, plate_size: int) -> None:
                                 f"Selected grouping has {category_count} categories; the plot may be crowded."
                             )
 
+                        point_marker_size = st.slider(
+                            "Point size",
+                            min_value=4,
+                            max_value=18,
+                            value=8,
+                            key=f"compare_point_size_{selected_signal_slug}_{selected_feature_name}",
+                        )
+                        box_line_width = st.slider(
+                            "Box line width",
+                            min_value=0.5,
+                            max_value=3.0,
+                            value=1.1,
+                            step=0.1,
+                            key=f"compare_box_line_width_{selected_signal_slug}_{selected_feature_name}",
+                        )
+
                         fig, plot_df = _build_feature_comparison_figure(
                             comparison_df=comparison_df,
                             group_columns=selected_group_columns,
@@ -2284,6 +2305,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             feature_name=selected_feature_name,
                             color_column=selected_color_column,
                             facet_column=selected_facet_column,
+                            point_marker_size=point_marker_size,
+                            box_line_width=box_line_width,
                         )
                         if (
                             selected_color_column
