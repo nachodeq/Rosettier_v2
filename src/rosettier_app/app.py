@@ -819,7 +819,15 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         n_rows = max((row for row, _ in panel_position.values()), default=0) + 1
         n_cols = max((col for _, col in panel_position.values()), default=0) + 1
 
-        figsize = (max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows))
+        layout_width = getattr(getattr(fig, "layout", None), "width", None)
+        layout_height = getattr(getattr(fig, "layout", None), "height", None)
+        if isinstance(layout_width, (int, float)) and isinstance(layout_height, (int, float)) and layout_width > 0 and layout_height > 0:
+            # Keep static exports aligned with the interactive Plotly canvas size.
+            # Matplotlib figsize is in inches, so convert from px using a stable display DPI.
+            export_dpi = 100.0
+            figsize = (float(layout_width) / export_dpi, float(layout_height) / export_dpi)
+        else:
+            figsize = (max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows))
         if hasattr(plt, "subplots"):
             figure, axes_grid = plt.subplots(
                 n_rows,
