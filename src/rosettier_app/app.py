@@ -580,6 +580,8 @@ def _build_feature_comparison_figure(
     facet_column: str | None,
     point_marker_size: int = 8,
     box_line_width: float = 1.1,
+    plot_height_px: int = 430,
+    plot_width_px: int = 760,
 ):
     """Build the Plotly figure used by both preview and all export formats."""
     import plotly.graph_objects as go
@@ -726,8 +728,8 @@ def _build_feature_comparison_figure(
         },
         title={"text": f"{signal_name}: {feature_label} by {title_suffix}", "y": 0.995, "font": {"color": "#000000"}},
         font={"color": "#000000"},
-        height=430,
-        width=760,
+        height=plot_height_px,
+        width=plot_width_px,
     )
     fig.update_xaxes(title=" + ".join(group_columns), tickfont={"color": "#000000"}, title_font={"color": "#000000"})
     fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec", tickfont={"color": "#000000"}, title_font={"color": "#000000"})
@@ -2299,15 +2301,24 @@ def _render_analyze_data(st, plate_size: int) -> None:
                                 f"Selected grouping has {category_count} categories; the plot may be crowded."
                             )
 
-                        plot_size = st.slider(
-                            "Size",
-                            min_value=4,
-                            max_value=18,
-                            value=8,
-                            key=f"compare_plot_size_{selected_signal_slug}_{selected_feature_name}",
+                        point_marker_size = 8
+                        box_line_width = 1.1
+                        plot_height_px = st.slider(
+                            "Plot height (px)",
+                            min_value=320,
+                            max_value=1200,
+                            value=430,
+                            step=10,
+                            key=f"compare_plot_height_{selected_signal_slug}_{selected_feature_name}",
                         )
-                        point_marker_size = plot_size
-                        box_line_width = max(0.5, round(plot_size / 8.0, 1))
+                        plot_width_px = st.slider(
+                            "Plot width (px)",
+                            min_value=480,
+                            max_value=1800,
+                            value=760,
+                            step=10,
+                            key=f"compare_plot_width_{selected_signal_slug}_{selected_feature_name}",
+                        )
 
                         fig, plot_df = _build_feature_comparison_figure(
                             comparison_df=comparison_df,
@@ -2320,6 +2331,8 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             facet_column=selected_facet_column,
                             point_marker_size=point_marker_size,
                             box_line_width=box_line_width,
+                            plot_height_px=plot_height_px,
+                            plot_width_px=plot_width_px,
                         )
                         if (
                             selected_color_column
