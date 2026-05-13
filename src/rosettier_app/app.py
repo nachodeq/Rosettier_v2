@@ -1953,12 +1953,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 width=plot_width,
                 hovermode="x unified",
             )
+            st.plotly_chart(
+                fig,
+                use_container_width=False,
+                key=f"raw_curves_plot_{signal_key_slug}",
+            )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=True,
+                show_preview=False,
             )
 
             try:
