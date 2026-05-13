@@ -1018,7 +1018,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             unique_labels.append(label)
         has_legend = bool(unique_labels and len(unique_labels) <= 20)
         if has_legend and hasattr(figure, "legend"):
-            figure.legend(
+            legend = figure.legend(
                 unique_handles,
                 unique_labels,
                 loc="upper center",
@@ -1026,6 +1026,27 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                 frameon=False,
                 ncol=min(4, max(1, len(unique_labels))),
             )
+            if legend is not None:
+                for text in legend.get_texts():
+                    text.set_color("#000000")
+
+        if hasattr(figure, "patch"):
+            figure.patch.set_facecolor("white")
+        if plot_title and hasattr(figure, "_suptitle") and figure._suptitle is not None:
+            figure._suptitle.set_color("#000000")
+        for row in range(n_rows):
+            for col in range(n_cols):
+                axis = axes_grid[row][col]
+                if hasattr(axis, "set_facecolor"):
+                    axis.set_facecolor("white")
+                if hasattr(axis, "tick_params"):
+                    axis.tick_params(axis="both", colors="#000000")
+                if hasattr(axis, "xaxis") and hasattr(axis.xaxis, "label"):
+                    axis.xaxis.label.set_color("#000000")
+                if hasattr(axis, "yaxis") and hasattr(axis.yaxis, "label"):
+                    axis.yaxis.label.set_color("#000000")
+                if hasattr(axis, "title"):
+                    axis.title.set_color("#000000")
 
         buffer = BytesIO()
         if has_legend:
@@ -1080,6 +1101,9 @@ def _plot_has_large_legend(fig, *, limit: int = 20) -> bool:
 
 def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: str, show_preview: bool = True) -> None:
     """Render export preview and static image download buttons for a Plotly figure."""
+    if show_preview and hasattr(st, "plotly_chart"):
+        st.plotly_chart(fig, use_container_width=False)
+
     static_available, unavailable_message = _plotly_static_export_status()
     if not static_available:
         st.caption(unavailable_message)
@@ -1106,7 +1130,6 @@ def _render_plot_download_buttons(st, *, fig, filename_stem: str, key_prefix: st
                 else:
                     st.image(png_bytes, use_container_width=False, width=preview_width)
             except TypeError:
-                # Backward-compatible call shape for test doubles/older st-like APIs.
                 st.image(png_bytes, use_container_width=False)
         st.download_button(
             label="Download plot (PNG)",
