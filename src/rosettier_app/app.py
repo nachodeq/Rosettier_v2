@@ -146,8 +146,9 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         range=[0.5, len(spec.columns) + 0.5],
         dtick=1,
         title="Column",
+        color="#000000",
         tickfont={"size": 11},
-        title_font={"size": 12},
+        title_font={"size": 12, "color": "#000000"},
         showgrid=False,
         zeroline=False,
     )
@@ -158,17 +159,20 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
         tickvals=list(range(len(spec.rows), 0, -1)),
         ticktext=list(spec.rows),
         title="Row",
+        color="#000000",
         tickfont={"size": 11},
-        title_font={"size": 12},
+        title_font={"size": 12, "color": "#000000"},
         showgrid=False,
         zeroline=False,
     )
     fig.update_layout(
+        template="plotly_white",
         height=560 if spec.size == 96 else 700,
         clickmode="event+select",
         dragmode="select",
         paper_bgcolor="white",
         plot_bgcolor="white",
+        font={"color": "#000000"},
         margin={"l": 8, "r": 8, "t": 8, "b": 8},
     )
     return fig
