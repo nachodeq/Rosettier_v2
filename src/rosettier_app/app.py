@@ -756,6 +756,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         raise RuntimeError("PNG/SVG export requires matplotlib.")
 
     figure = None
+    target_dpi = 300.0 if image_format == "png" else 100.0
     try:
         def _subplot_key_for_trace(trace) -> str:
             x_axis_ref = str(getattr(trace, "xaxis", "") or "x")
@@ -823,9 +824,8 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         layout_height = getattr(getattr(fig, "layout", None), "height", None)
         if isinstance(layout_width, (int, float)) and isinstance(layout_height, (int, float)) and layout_width > 0 and layout_height > 0:
             # Keep static exports aligned with the interactive Plotly canvas size.
-            # Matplotlib figsize is in inches, so convert from px using a stable display DPI.
-            export_dpi = 100.0
-            figsize = (float(layout_width) / export_dpi, float(layout_height) / export_dpi)
+            # Matplotlib figsize is in inches; map Plotly px using the same DPI used for export.
+            figsize = (float(layout_width) / target_dpi, float(layout_height) / target_dpi)
         else:
             figsize = (max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows))
         if hasattr(plt, "subplots"):
@@ -1072,7 +1072,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
             figure.tight_layout()
         savefig_kwargs = {"format": image_format, "bbox_inches": "tight"}
         if image_format == "png":
-            savefig_kwargs["dpi"] = 300
+            savefig_kwargs["dpi"] = target_dpi
         figure.savefig(buffer, **savefig_kwargs)
         plt.close(figure)
         return buffer.getvalue()
