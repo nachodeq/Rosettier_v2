@@ -580,8 +580,8 @@ def _build_feature_comparison_figure(
     facet_column: str | None,
     point_marker_size: int = 8,
     box_line_width: float = 1.1,
-    plot_height_px: int = 430,
-    plot_width_px: int = 760,
+    plot_height_px: int = 520,
+    plot_width_px: int = 900,
 ):
     """Build the Plotly figure used by both preview and all export formats."""
     import plotly.graph_objects as go
@@ -611,11 +611,13 @@ def _build_feature_comparison_figure(
     facet_values = [None]
     if facet_arg:
         facet_values = plot_df[facet_arg].drop_duplicates().tolist()
+    facet_count = len(facet_values)
     fig = make_subplots(
         rows=1,
-        cols=len(facet_values),
+        cols=facet_count,
         subplot_titles=None if facet_values == [None] else [f"{facet_arg}: {value}" for value in facet_values],
         shared_yaxes=True,
+        horizontal_spacing=0.08 if facet_count > 1 else 0.04,
     )
 
     if color_arg:
@@ -713,26 +715,44 @@ def _build_feature_comparison_figure(
             showgrid=False,
         )
 
+    effective_width = max(plot_width_px, 560 + 330 * facet_count)
+    effective_height = max(plot_height_px, 520 if facet_count == 1 else 560)
+
     fig.update_layout(
         template="plotly_white",
-        margin={"l": 40, "r": 20, "t": 95, "b": 130},
+        margin={"l": 70, "r": 30, "t": 140, "b": 170},
         legend={
             "title": color_arg or "",
             "tracegroupgap": 0,
+            "orientation": "h",
             "yanchor": "top",
-            "y": 1.0,
-            "xanchor": "left",
-            "x": 0.0,
+            "y": 0.965,
+            "xanchor": "center",
+            "x": 0.5,
             "font": {"color": "#000000"},
             "title_font": {"color": "#000000"},
         },
         title={"text": f"{signal_name}: {feature_label} by {title_suffix}", "y": 0.995, "font": {"color": "#000000"}},
         font={"color": "#000000"},
-        height=plot_height_px,
-        width=plot_width_px,
+        height=effective_height,
+        width=effective_width,
     )
-    fig.update_xaxes(title=" + ".join(group_columns), tickfont={"color": "#000000"}, title_font={"color": "#000000"})
-    fig.update_yaxes(title=feature_label, showgrid=True, gridcolor="#ececec", tickfont={"color": "#000000"}, title_font={"color": "#000000"})
+    fig.update_xaxes(
+        title=" + ".join(group_columns),
+        tickfont={"color": "#000000"},
+        title_font={"color": "#000000"},
+        title_standoff=20,
+        automargin=True,
+    )
+    fig.update_yaxes(
+        title=feature_label,
+        showgrid=True,
+        gridcolor="#ececec",
+        tickfont={"color": "#000000"},
+        title_font={"color": "#000000"},
+        title_standoff=14,
+        automargin=True,
+    )
     if color_arg and plot_df[color_arg].nunique() > 12:
         fig.update_layout(showlegend=False)
     if plot_mode == "points":
