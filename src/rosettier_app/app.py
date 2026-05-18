@@ -1950,18 +1950,18 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             plot_height = st.slider(
                 "Plot height (px)",
-                min_value=320,
-                max_value=980,
-                value=620,
-                step=20,
+                min_value=220,
+                max_value=460,
+                value=260,
+                step=10,
                 key=f"analyze_raw_curve_height_{signal_key_slug}",
             )
             plot_width = st.slider(
                 "Plot width (px)",
-                min_value=700,
-                max_value=2000,
-                value=1280,
-                step=20,
+                min_value=380,
+                max_value=900,
+                value=520,
+                step=10,
                 key=f"analyze_raw_curve_width_{signal_key_slug}",
             )
 
