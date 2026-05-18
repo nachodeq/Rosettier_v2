@@ -1637,7 +1637,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
     st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
     st.markdown(
         "### 1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata)) "
-        "<span title='Example (fictitious):&#10;well&#9;strain&#9;dose&#10;A01&#9;WT&#9;0&#10;A02&#9;KO&#9;10'>(?) example</span>",
+        "<span title='Example (fictitious):&#10;well&#9;strain&#9;dose&#10;A01&#9;WT&#9;0&#10;A02&#9;KO&#9;10' style='cursor: help;'>ⓘ</span>",
         unsafe_allow_html=True,
     )
     rosetta_source = st.radio(
@@ -1717,12 +1717,18 @@ def _render_analyze_data(st, plate_size: int) -> None:
     enable_time_filter = st.checkbox("Enable time filtering", value=False, key="analyze_enable_time_filter")
     min_time = st.number_input("Min time (minutes)", value=0.0, step=1.0, key="analyze_min_time")
     max_time = st.number_input("Max time (minutes)", value=0.0, step=1.0, key="analyze_max_time")
+    st.markdown(
+        "**Features to compute** "
+        "<span title='Feature descriptions:&#10;- endpoint: last value in selected time window&#10;- auc: area under the curve (trapezoidal)&#10;- max slope: largest positive rate of change&#10;- max value: highest observed value&#10;- time to threshold: first time the signal reaches the chosen threshold' style='cursor: help;'>ⓘ</span>",
+        unsafe_allow_html=True,
+    )
     selected_features = st.multiselect(
         "Features to compute",
         options=["endpoint", "auc", "max_slope", "max_value", "time_to_threshold"],
         default=["endpoint", "auc", "max_slope", "max_value"],
         format_func=lambda x: _FEATURE_LABELS.get(x, x),
         key="analyze_selected_features",
+        label_visibility="collapsed",
     )
     threshold: float | None = None
     if "time_to_threshold" in selected_features:
