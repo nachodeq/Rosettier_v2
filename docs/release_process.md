@@ -54,8 +54,3 @@ On GitHub:
 3. Attach source archives if needed.
 4. Publish release.
 
-## 8) Zip distribution for collaborators
-
-- Create a zip archive of the tagged source tree.
-- Include `environment.yml` and installation docs.
-- Instruct collaborators to use conda/Miniforge and run `rosettier-app`.

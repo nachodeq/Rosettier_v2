@@ -101,10 +101,3 @@ python -m streamlit run src/rosettier_app/app.py --server.port 8502
 
 - Confirm you are running from the repository root containing `pyproject.toml`.
 
-## Zip/USB distribution workflow
-
-1. Create a zip archive (or copy folder to USB) containing the repository.
-2. On target machine, extract/open the project root.
-3. Run `conda env create -f environment.yml`.
-4. Activate with `conda activate rosettier-v2`.
-5. Launch with `rosettier-app`.
