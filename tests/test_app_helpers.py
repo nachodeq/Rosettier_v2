@@ -96,6 +96,19 @@ def test_apply_text_filter_supports_equals_and_not_equals():
     assert not_equals["well"].tolist() == ["A02"]
 
 
+def test_metadata_filter_values_returns_sorted_non_empty_values():
+    df = pd.DataFrame({"strain": [" treated ", "", None, "control", "treated"]})
+    assert app._metadata_filter_values(df, "strain") == ["control", "treated"]
+
+
+def test_apply_multivalue_filter_supports_include_and_exclude():
+    df = pd.DataFrame({"strain": ["control", "treated", "drug"], "well": ["A01", "A02", "A03"]})
+    included = app._apply_multivalue_filter(df, "strain", ["control", "drug"], mode="include")
+    excluded = app._apply_multivalue_filter(df, "strain", ["control", "drug"], mode="exclude")
+    assert included["well"].tolist() == ["A01", "A03"]
+    assert excluded["well"].tolist() == ["A02"]
+
+
 
 def test_compute_selected_features_returns_only_requested_and_renamed_columns():
     tidy = pd.DataFrame(
