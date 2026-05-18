@@ -1318,6 +1318,38 @@ def _apply_text_filter(df: pd.DataFrame, column: str, operator: str, value: str)
     raise ValueError(f"Unsupported operator: {operator}")
 
 
+def _metadata_filter_values(df: pd.DataFrame, column: str) -> list[str]:
+    """Return sorted distinct string values for one metadata column."""
+    if column not in df.columns:
+        return []
+    values = (
+        df[column]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+    values = values.loc[values != ""]
+    return sorted(values.unique().tolist())
+
+
+def _apply_multivalue_filter(
+    df: pd.DataFrame,
+    column: str,
+    selected_values: list[str],
+    mode: str = "include",
+) -> pd.DataFrame:
+    """Apply include/exclude filtering for one column using multiple values."""
+    if not selected_values:
+        return df.copy()
+    series = df[column].astype(str).str.strip()
+    normalized_values = {str(value).strip() for value in selected_values}
+    if mode == "include":
+        return df.loc[series.isin(normalized_values)].copy()
+    if mode == "exclude":
+        return df.loc[~series.isin(normalized_values)].copy()
+    raise ValueError(f"Unsupported filter mode: {mode}")
+
+
 def _prepare_raw_curve_plot_df(
     tidy_df: pd.DataFrame,
     wells_to_plot: list[str],
@@ -1856,38 +1888,42 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 )
                 if selected_group_column == "None":
                     selected_group_column = None
-            exclude_column = None
-            exclude_operator = "!="
-            exclude_value = ""
+            filter_column = None
+            filter_mode_label = "Include selected values"
+            filter_values: list[str] = []
             if metadata_columns:
-                exclude_column = st.selectbox(
-                    "Exclude curves by metadata (optional)",
+                filter_column = st.selectbox(
+                    "Filter curves by metadata (optional)",
                     options=["None", *metadata_columns],
                     index=0,
-                    key=f"analyze_raw_curve_exclude_column_{signal_key_slug}",
-                    help='Example: strain != "control".',
+                    key=f"analyze_raw_curve_filter_column_{signal_key_slug}",
+                    help="Choose a metadata column, then select one or more values to include/exclude.",
                 )
-                if exclude_column != "None":
-                    exclude_operator = st.selectbox(
-                        "Exclude operator",
-                        options=["!=", "=="],
+                if filter_column != "None" and merged_df is not None:
+                    available_filter_values = _metadata_filter_values(merged_df, filter_column)
+                    filter_mode_label = st.radio(
+                        "Filter mode",
+                        options=["Include selected values", "Exclude selected values"],
                         index=0,
-                        key=f"analyze_raw_curve_exclude_operator_{signal_key_slug}",
+                        horizontal=True,
+                        key=f"analyze_raw_curve_filter_mode_{signal_key_slug}",
                     )
-                    exclude_value = st.text_input(
-                        "Exclude value",
-                        value="",
-                        key=f"analyze_raw_curve_exclude_value_{signal_key_slug}",
+                    filter_values = st.multiselect(
+                        "Values",
+                        options=available_filter_values,
+                        default=[],
+                        key=f"analyze_raw_curve_filter_values_{signal_key_slug}",
                     )
             resolved_group_column, group_column_warning = _resolve_raw_curve_group_column(merged_df, selected_group_column)
             if group_column_warning:
                 st.warning(group_column_warning)
-            if exclude_column not in (None, "None") and exclude_value.strip() and merged_df is not None:
-                merged_filtered = _apply_text_filter(merged_df, exclude_column, exclude_operator, exclude_value)
+            if filter_column not in (None, "None") and filter_values and merged_df is not None:
+                mode = "include" if filter_mode_label == "Include selected values" else "exclude"
+                merged_filtered = _apply_multivalue_filter(merged_df, filter_column, filter_values, mode=mode)
                 kept_wells = sorted(merged_filtered["well"].dropna().astype(str).unique().tolist())
                 wells_filtered_df = wells_filtered_df.loc[wells_filtered_df["well"].isin(kept_wells)].copy()
                 st.caption(
-                    f"Applied raw-curve filter: {exclude_column} {exclude_operator} '{exclude_value.strip()}' "
+                    f"Applied raw-curve filter: {filter_column} ({filter_mode_label.lower()}) = {filter_values} "
                     f"({len(wells_filtered_df)} rows after filtering)."
                 )
             plot_df = _prepare_raw_curve_plot_df(
@@ -2252,29 +2288,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     if selected_facet_column == "None":
                         selected_facet_column = None
                     selected_filter_column = st.selectbox(
-                        'Filter (e.g. date == "2026-04-28" or strain != "control")',
+                        "Filter metadata (optional)",
                         options=["None", *metadata_columns],
                         index=0,
                         key="compare_features_filter_column",
                     )
-                    selected_filter_operator = "=="
-                    selected_filter_value = ""
-                    if selected_filter_column != "None":
-                        selected_filter_operator = st.selectbox(
-                            "Filter operator",
-                            options=["==", "!="],
-                            index=0,
-                            key="compare_features_filter_operator",
-                        )
-                        selected_filter_value = st.text_input(
-                            "Filter value",
-                            value="",
-                            key="compare_features_filter_value",
-                            help="Rows are filtered by text comparison on the selected metadata column.",
-                        )
-                        if not selected_filter_value.strip():
-                            st.info("Type a filter value to apply the metadata filter.")
-
                     comparison_df, missing_group_counts = _prepare_feature_comparison_table(
                         features_df=selected_features_df,
                         merged_df=selected_merged_df,
@@ -2283,15 +2301,27 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         color_column=selected_color_column,
                         facet_column=selected_facet_column,
                     )
-                    if selected_filter_column != "None" and selected_filter_value.strip():
-                        comparison_df = _apply_text_filter(
-                            comparison_df,
-                            selected_filter_column,
-                            selected_filter_operator,
-                            selected_filter_value,
+                    selected_filter_mode_label = "Include selected values"
+                    selected_filter_values: list[str] = []
+                    if selected_filter_column != "None":
+                        selected_filter_mode_label = st.radio(
+                            "Filter mode",
+                            options=["Include selected values", "Exclude selected values"],
+                            index=0,
+                            horizontal=True,
+                            key="compare_features_filter_mode",
                         )
+                        selected_filter_values = st.multiselect(
+                            "Values",
+                            options=_metadata_filter_values(comparison_df, selected_filter_column),
+                            default=[],
+                            key="compare_features_filter_values",
+                        )
+                    if selected_filter_column != "None" and selected_filter_values:
+                        mode = "include" if selected_filter_mode_label == "Include selected values" else "exclude"
+                        comparison_df = _apply_multivalue_filter(comparison_df, selected_filter_column, selected_filter_values, mode=mode)
                         st.caption(
-                            f"Applied filter: {selected_filter_column} {selected_filter_operator} '{selected_filter_value.strip()}' "
+                            f"Applied filter: {selected_filter_column} ({selected_filter_mode_label.lower()}) = {selected_filter_values} "
                             f"({len(comparison_df)} rows after filtering)."
                         )
                         if comparison_df.empty:
