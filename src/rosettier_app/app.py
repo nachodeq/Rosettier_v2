@@ -1635,7 +1635,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
     session_rosetta_available = "rosetta_df" in st.session_state
 
     st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
-    st.markdown("### 1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata)) <span title="Example (fictitious):\nwell\tstrain\tdose\nA01\tWT\t0\nA02\tKO\t10">(?) example</span>", unsafe_allow_html=True)
+    st.markdown(
+        "### 1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata)) "
+        "<span title='Example (fictitious):&#10;well&#9;strain&#9;dose&#10;A01&#9;WT&#9;0&#10;A02&#9;KO&#9;10'>(?) example</span>",
+        unsafe_allow_html=True,
+    )
     rosetta_source = st.radio(
         "Choose Rosetta (metadata) source",
         options=["Use current session Rosetta (metadata)", "Upload existing Rosetta (metadata) CSV/TSV/TXT"],
@@ -1664,7 +1668,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
     )
 
     st.markdown('<a id="step-2-inputs"></a>', unsafe_allow_html=True)
-    st.markdown("### 2. Inputs <span title="Example measurement format (fictitious):\nTime,A01,A02\n0,0.05,0.06\n30,0.12,0.15">(?) example</span> (example: OD, GFP, RFP files)", unsafe_allow_html=True)
+    st.markdown(
+        "### 2. Inputs "
+        "<span title='Example measurement format (fictitious):&#10;Time,A01,A02&#10;0,0.05,0.06&#10;30,0.12,0.15'>(?) example</span> "
+        "(example: OD, GFP, RFP files)",
+        unsafe_allow_html=True,
+    )
     measurement_entries: list[dict[str, object]] = []
     for idx in range(signal_count):
         with st.expander(f"Measurement {idx + 1}", expanded=(idx == 0)):
