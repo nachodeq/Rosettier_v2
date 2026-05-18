@@ -7,15 +7,12 @@ Rosettier v2 is an open source tool for **plate-reader growth curve workflows**.
 
 for creating Rosetta (metadata) plate maps, importing measurements, running exploratory analysis, and exporting analysis-ready outputs.
 
-Rosettier is designed for reproducible local execution across Linux, macOS, and Windows (via conda/Miniforge).
-
 ## Key features
 
 - Rosetta (metadata) support for **96-well and 384-well** plates.
 - Plate-reader time-series parsing and tidy conversion.
 - Merge of measurement time-series with Rosetta (metadata).
 - Core QC summaries and feature extraction (endpoint, AUC, max slope, max value, time-to-threshold).
-- Local-first workflow suitable for lab machines, shared drives, and zip/USB transfers.
 
 ## Screenshots
 
@@ -63,19 +60,6 @@ Detailed platform instructions: `docs/installation.md`.
 
 See `docs/quickstart.md` for a concise walkthrough.
 
-## Supported platforms
-
-- **Linux** (conda or pip environment)
-- **macOS** (conda or pip environment)
-- **Windows** (**Miniforge/conda recommended**)
-
-Officially supported distribution methods:
-
-- GitHub source release
-- zip/USB repository distribution
-- conda/Miniforge environment installation
-- local Streamlit launcher (`rosettier-app`)
-
 ## Workflow overview
 
 ### 1) Create Rosetta (metadata)
@@ -113,17 +97,10 @@ The `examples/` folder includes reproducible sample datasets:
 
 Dataset descriptions: `examples/README.md`.
 
-## Releases and downloads
-
-For releases, download source from GitHub release assets or repository tags. For collaborator handoff, zip the repository and share with `environment.yml` intact.
-
-Release procedure: `docs/release_process.md`.
-
 ## Citation
 
-If Rosettier v2 contributes to published work, cite the software metadata in `CITATION.cff`.
+if Rosettier was used in your paper, please cite: XXXXX
 
-A DOI can be added later when archival release metadata is available.
 
 ## License
 
@@ -138,9 +115,4 @@ See `docs/installation.md` for common issues, including:
 - Streamlit port already in use
 - editable install issues
 
-## Developer notes
-
-- Core reusable logic belongs in `src/rosettier/`.
-- App/UI entrypoints belong in `src/rosettier_app/`.
-- Run tests with `pytest -v` before release.
 
