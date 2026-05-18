@@ -1636,7 +1636,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
     st.markdown(
-        "### 1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata))",
+        "### 1. Rosetta (metadata) source (use your current session map or upload a file)",
         unsafe_allow_html=True,
     )
     rosetta_source = st.radio(
