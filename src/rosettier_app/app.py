@@ -1635,7 +1635,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
     session_rosetta_available = "rosetta_df" in st.session_state
 
     st.markdown('<a id="step-1-rosetta-source"></a>', unsafe_allow_html=True)
-    st.subheader("1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata))")
+    st.markdown(
+        "### 1. Rosetta (metadata) source (example: use your current session map or upload a saved Rosetta (metadata)) "
+        "<span title='Example (fictitious):&#10;well&#9;strain&#9;dose&#10;A01&#9;WT&#9;0&#10;A02&#9;KO&#9;10'>(?) example</span>",
+        unsafe_allow_html=True,
+    )
     rosetta_source = st.radio(
         "Choose Rosetta (metadata) source",
         options=["Use current session Rosetta (metadata)", "Upload existing Rosetta (metadata) CSV/TSV/TXT"],
@@ -1653,31 +1657,36 @@ def _render_analyze_data(st, plate_size: int) -> None:
         )
     signal_count = int(
         st.number_input(
-            "Number of signals/files",
+            "Number of measurements/files",
             min_value=1,
             max_value=8,
             value=int(st.session_state.get("analyze_signal_count", 1)),
             step=1,
             key="analyze_signal_count",
-            help="Each uploaded plate-reader file corresponds to one named signal.",
+            help="Each uploaded plate-reader file corresponds to one named measurement.",
         )
     )
 
     st.markdown('<a id="step-2-inputs"></a>', unsafe_allow_html=True)
-    st.subheader("2. Inputs (example: OD, GFP, RFP files)")
-    signal_entries: list[dict[str, object]] = []
+    st.markdown(
+        "### 2. Inputs "
+        "<span title='Example measurement format (fictitious):&#10;Time,A01,A02&#10;0,0.05,0.06&#10;30,0.12,0.15'>(?) example</span> "
+        "(example: OD, GFP, RFP files)",
+        unsafe_allow_html=True,
+    )
+    measurement_entries: list[dict[str, object]] = []
     for idx in range(signal_count):
-        with st.expander(f"Signal {idx + 1}", expanded=(idx == 0)):
+        with st.expander(f"Measurement {idx + 1}", expanded=(idx == 0)):
             uploaded_file = st.file_uploader(
-                f"Measurement file for signal {idx + 1} (CSV/TSV/TXT; wide format)",
+                f"Measurement file for measurement {idx + 1} (CSV/TSV/TXT; wide format)",
                 type=["csv", "tsv", "txt"],
                 key=f"analyze_measurements_upload_{idx}",
             )
             signal_name = st.text_input(
-                "Signal name",
-                value=f"Signal_{idx + 1}",
+                "Measurement name",
+                value=f"Measurement_{idx + 1}",
                 help="Examples: OD, GFP, RFP, luminescence.",
-                key=f"analyze_signal_name_{idx}",
+                key=f"analyze_measurement_name_{idx}",
             )
             delimiter_choice = st.selectbox(
                 "Delimiter",
@@ -1692,11 +1701,11 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 key=f"analyze_decimal_{idx}",
             )
             time_column_name = st.text_input("Time column name", value="Time", key=f"analyze_time_column_{idx}")
-            signal_entries.append(
+            measurement_entries.append(
                 {
                     "index": idx,
                     "uploaded_file": uploaded_file,
-                    "signal_name": signal_name,
+                    "measurement_name": signal_name,
                     "delimiter": delimiter_choice,
                     "decimal": decimal_choice,
                     "time_column": time_column_name,
@@ -1721,20 +1730,20 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
     run_analysis = st.button("Run analysis", type="primary", key="analyze_run_button")
     if run_analysis:
-        valid_signals = [entry for entry in signal_entries if entry["uploaded_file"] is not None]
+        valid_measurements = [entry for entry in measurement_entries if entry["uploaded_file"] is not None]
         legacy_uploaded_file = st.session_state.get("analyze_measurements_upload")
-        if not valid_signals and legacy_uploaded_file is not None:
-            valid_signals = [
+        if not valid_measurements and legacy_uploaded_file is not None:
+            valid_measurements = [
                 {
                     "index": 0,
                     "uploaded_file": legacy_uploaded_file,
-                    "signal_name": st.session_state.get("analyze_signal_name_0", "Signal_1"),
+                    "measurement_name": st.session_state.get("analyze_measurement_name_0", "Measurement_1"),
                     "delimiter": st.session_state.get("analyze_delimiter_0", "auto"),
                     "decimal": st.session_state.get("analyze_decimal_0", "auto"),
                     "time_column": st.session_state.get("analyze_time_column_0", "Time"),
                 }
             ]
-        if not valid_signals:
+        if not valid_measurements:
             st.info("Upload at least one measurements file to run analysis.")
         elif enable_time_filter and min_time > max_time:
             st.error("Time filter is enabled, but min time is greater than max time.")
@@ -1766,12 +1775,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
             st.session_state["analyze_results"] = {"config": config}
 
             signal_payloads: list[dict[str, object]] = []
-            for entry in valid_signals:
+            for entry in valid_measurements:
                 uploaded_file = entry["uploaded_file"]
                 signal_payloads.append(
                     {
                         "index": entry["index"],
-                        "signal_name": (str(entry["signal_name"]).strip() or f"Signal_{entry['index'] + 1}"),
+                        "signal_name": (str(entry["measurement_name"]).strip() or f"Measurement_{entry['index'] + 1}"),
                         "delimiter": entry["delimiter"],
                         "decimal": entry["decimal"],
                         "time_column": entry["time_column"],
