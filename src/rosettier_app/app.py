@@ -1952,7 +1952,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 "Tune plot proportions",
                 value=False,
                 key=f"analyze_raw_curve_tune_plot_proportions_{signal_key_slug}",
-                help="Enable manual width/height sliders for the interactive and exported plot.",
+                help="Enable manual width/height sliders for the exported plot preview and files.",
             )
             plot_height = 420
             plot_width = 960
@@ -2044,17 +2044,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             fig.update_xaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
             fig.update_yaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
-            st.plotly_chart(
-                fig,
-                use_container_width=True,
-                key=f"raw_curve_interactive_plot_{signal_key_slug}",
-            )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=False,
+                show_preview=True,
             )
 
             try:
@@ -2359,7 +2354,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             "Tune plot proportions",
                             value=False,
                             key=f"compare_plot_tune_dimensions_{selected_signal_slug}_{selected_feature_name}",
-                            help="Enable manual width/height sliders for the interactive and exported plot.",
+                            help="Enable manual width/height sliders for the exported plot preview and files.",
                         )
                         plot_height_px = 520
                         plot_width_px = 980
@@ -2401,17 +2396,12 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             and plot_df[selected_color_column].nunique() > 12
                         ):
                             st.caption("Legend hidden because selected color column has many categories.")
-                        st.plotly_chart(
-                            fig,
-                            use_container_width=True,
-                            key=f"comparison_interactive_plot_{selected_signal_slug}_{selected_feature_name}",
-                        )
                         _render_plot_download_buttons(
                             st,
                             fig=fig,
                             filename_stem=f"{selected_signal_slug}_{selected_feature_name}_comparison",
                             key_prefix=f"download_compare_plot_{selected_signal_slug}_{selected_feature_name}",
-                            show_preview=False,
+                            show_preview=True,
                         )
 
                         st.caption("Comparison table used for plotting")
