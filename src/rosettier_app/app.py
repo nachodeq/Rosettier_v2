@@ -776,6 +776,9 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         raise RuntimeError("PNG/SVG export requires matplotlib.")
 
     figure = None
+    # Use a logical canvas DPI for px->inch conversion so text size stays proportional
+    # to the interactive Plotly preview. Export DPI can still be higher for sharper files.
+    canvas_dpi = 100.0
     target_dpi = 300.0 if image_format == "png" else 100.0
     try:
         def _subplot_key_for_trace(trace) -> str:
@@ -845,7 +848,7 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
         if isinstance(layout_width, (int, float)) and isinstance(layout_height, (int, float)) and layout_width > 0 and layout_height > 0:
             # Keep static exports aligned with the interactive Plotly canvas size.
             # Matplotlib figsize is in inches; map Plotly px using the same DPI used for export.
-            figsize = (float(layout_width) / target_dpi, float(layout_height) / target_dpi)
+            figsize = (float(layout_width) / canvas_dpi, float(layout_height) / canvas_dpi)
         else:
             figsize = (max(6.8, 4.4 * n_cols), max(4.8, 3.4 * n_rows))
         if hasattr(plt, "subplots"):
