@@ -1948,22 +1948,31 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 key=f"analyze_raw_curve_view_mode_{signal_key_slug}",
                 help="Use Group average to reduce visual clutter and compare factors directly.",
             )
-            plot_height = st.slider(
-                "Plot height (px)",
-                min_value=220,
-                max_value=460,
-                value=260,
-                step=10,
-                key=f"analyze_raw_curve_height_{signal_key_slug}",
+            tune_raw_plot_proportions = st.checkbox(
+                "Tune plot proportions",
+                value=False,
+                key=f"analyze_raw_curve_tune_plot_proportions_{signal_key_slug}",
+                help="Enable manual width/height sliders for the interactive and exported plot.",
             )
-            plot_width = st.slider(
-                "Plot width (px)",
-                min_value=380,
-                max_value=900,
-                value=520,
-                step=10,
-                key=f"analyze_raw_curve_width_{signal_key_slug}",
-            )
+            plot_height = 420
+            plot_width = 960
+            if tune_raw_plot_proportions:
+                plot_height = st.slider(
+                    "Plot height (px)",
+                    min_value=260,
+                    max_value=1200,
+                    value=420,
+                    step=10,
+                    key=f"analyze_raw_curve_height_{signal_key_slug}",
+                )
+                plot_width = st.slider(
+                    "Plot width (px)",
+                    min_value=520,
+                    max_value=2200,
+                    value=960,
+                    step=10,
+                    key=f"analyze_raw_curve_width_{signal_key_slug}",
+                )
 
             fig = go.Figure()
             shown_groups: set[str] = set()
@@ -2035,12 +2044,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
             fig.update_xaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
             fig.update_yaxes(color="#000000", title_font={"color": "#000000"}, tickfont={"color": "#000000"})
+            st.plotly_chart(
+                fig,
+                use_container_width=True,
+                key=f"raw_curve_interactive_plot_{signal_key_slug}",
+            )
             _render_plot_download_buttons(
                 st,
                 fig=fig,
                 filename_stem=f"rosettier_raw_curves_{signal_slug}",
                 key_prefix=f"download_raw_curves_plot_{signal_key_slug}",
-                show_preview=True,
+                show_preview=False,
             )
 
             try:
@@ -2341,22 +2355,31 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
                         point_marker_size = 8
                         box_line_width = 1.1
-                        plot_height_px = st.slider(
-                            "Plot height (px)",
-                            min_value=320,
-                            max_value=1200,
-                            value=430,
-                            step=10,
-                            key=f"compare_plot_height_{selected_signal_slug}_{selected_feature_name}",
+                        tune_compare_plot_proportions = st.checkbox(
+                            "Tune plot proportions",
+                            value=False,
+                            key=f"compare_plot_tune_dimensions_{selected_signal_slug}_{selected_feature_name}",
+                            help="Enable manual width/height sliders for the interactive and exported plot.",
                         )
-                        plot_width_px = st.slider(
-                            "Plot width (px)",
-                            min_value=480,
-                            max_value=1800,
-                            value=760,
-                            step=10,
-                            key=f"compare_plot_width_{selected_signal_slug}_{selected_feature_name}",
-                        )
+                        plot_height_px = 520
+                        plot_width_px = 980
+                        if tune_compare_plot_proportions:
+                            plot_height_px = st.slider(
+                                "Plot height (px)",
+                                min_value=320,
+                                max_value=1400,
+                                value=520,
+                                step=10,
+                                key=f"compare_plot_height_{selected_signal_slug}_{selected_feature_name}",
+                            )
+                            plot_width_px = st.slider(
+                                "Plot width (px)",
+                                min_value=560,
+                                max_value=2200,
+                                value=980,
+                                step=10,
+                                key=f"compare_plot_width_{selected_signal_slug}_{selected_feature_name}",
+                            )
 
                         fig, plot_df = _build_feature_comparison_figure(
                             comparison_df=comparison_df,
@@ -2378,12 +2401,17 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             and plot_df[selected_color_column].nunique() > 12
                         ):
                             st.caption("Legend hidden because selected color column has many categories.")
+                        st.plotly_chart(
+                            fig,
+                            use_container_width=True,
+                            key=f"comparison_interactive_plot_{selected_signal_slug}_{selected_feature_name}",
+                        )
                         _render_plot_download_buttons(
                             st,
                             fig=fig,
                             filename_stem=f"{selected_signal_slug}_{selected_feature_name}_comparison",
                             key_prefix=f"download_compare_plot_{selected_signal_slug}_{selected_feature_name}",
-                            show_preview=True,
+                            show_preview=False,
                         )
 
                         st.caption("Comparison table used for plotting")
