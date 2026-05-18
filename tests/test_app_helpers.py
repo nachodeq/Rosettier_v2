@@ -530,8 +530,9 @@ def test_build_feature_comparison_figure_positions_title_above_legend():
     )
 
     assert fig.layout.title.y == 0.995
-    assert fig.layout.legend.y == 1.0
-    assert fig.layout.margin.t == 95
+    assert fig.layout.legend.y == 0.965
+    assert fig.layout.legend.orientation == "h"
+    assert fig.layout.margin.t == 140
 
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
