@@ -41,6 +41,51 @@ Then launch:
 rosettier-app
 ```
 
+### Alternative: Docker (step by step)
+
+If you are new to Docker, this is the simplest path:
+
+1. Install Docker Desktop (Windows/macOS) or Docker Engine (Linux).
+2. Verify Docker is running:
+
+```bash
+docker --version
+```
+
+3. From the project folder, build the image:
+
+```bash
+docker build -t rosettier-v2 .
+```
+
+4. Run the app in a container:
+
+```bash
+docker run --rm -p 8501:8501 rosettier-v2
+```
+
+5. Open `http://localhost:8501` in your browser.
+
+#### How to stop the app
+
+- In the terminal where Docker is running: `Ctrl+C`.
+- Because we use `--rm`, the container is removed automatically when it stops.
+
+#### If you want to load files from your local folder
+
+Mount a volume to share files between your machine and the container:
+
+```bash
+docker run --rm -p 8501:8501 -v "$(pwd):/work" rosettier-v2
+```
+
+> In PowerShell, if `$(pwd)` does not work, try `${PWD}`.
+
+#### Common issues
+
+- **"port is already allocated"**: change the local port, for example `-p 8502:8501`, and open `http://localhost:8502`.
+- **Docker does not start**: make sure Docker Desktop/Engine is running before executing commands.
+
 ### Alternative: pip editable install (local development/testing)
 
 ```bash
