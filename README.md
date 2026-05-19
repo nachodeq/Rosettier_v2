@@ -40,6 +40,7 @@ Create Rosetta → Import measurements → Analyze data → Export results
 - Screenshots: `docs/screenshots/README.md`
 - Example datasets: `examples/README.md`
 - Publication notes: `docs/publication_notes.md`
+- Video tutorial example `docs/Tutorial_analysis_rosettier.mp4`
 
 Screenshots and naming conventions are described in `docs/screenshots/README.md`.
 
