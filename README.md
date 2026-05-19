@@ -41,50 +41,50 @@ Then launch:
 rosettier-app
 ```
 
-### Alternative: Docker (paso a paso)
+### Alternative: Docker (step by step)
 
-Si nunca usaste Docker, esta es la forma más simple:
+If you are new to Docker, this is the simplest path:
 
-1. Instala Docker Desktop (Windows/macOS) o Docker Engine (Linux).
-2. Verifica que Docker esté corriendo:
+1. Install Docker Desktop (Windows/macOS) or Docker Engine (Linux).
+2. Verify Docker is running:
 
 ```bash
 docker --version
 ```
 
-3. Desde la carpeta del proyecto, construye la imagen:
+3. From the project folder, build the image:
 
 ```bash
 docker build -t rosettier-v2 .
 ```
 
-4. Ejecuta la app en un contenedor:
+4. Run the app in a container:
 
 ```bash
 docker run --rm -p 8501:8501 rosettier-v2
 ```
 
-5. Abre `http://localhost:8501` en tu navegador.
+5. Open `http://localhost:8501` in your browser.
 
-#### Cómo parar la app
+#### How to stop the app
 
-- En la terminal donde corre Docker: `Ctrl+C`.
-- Como usamos `--rm`, el contenedor se borra solo al detenerse.
+- In the terminal where Docker is running: `Ctrl+C`.
+- Because we use `--rm`, the container is removed automatically when it stops.
 
-#### Si quieres cargar archivos desde tu carpeta local
+#### If you want to load files from your local folder
 
-Monta un volumen para compartir archivos entre tu máquina y el contenedor:
+Mount a volume to share files between your machine and the container:
 
 ```bash
 docker run --rm -p 8501:8501 -v "$(pwd):/work" rosettier-v2
 ```
 
-> En PowerShell, si `$(pwd)` no funciona, prueba `${PWD}`.
+> In PowerShell, if `$(pwd)` does not work, try `${PWD}`.
 
-#### Problemas comunes
+#### Common issues
 
-- **"port is already allocated"**: cambia el puerto local, por ejemplo `-p 8502:8501`, y abre `http://localhost:8502`.
-- **Docker no inicia**: asegúrate de tener Docker Desktop/Engine levantado antes de ejecutar los comandos.
+- **"port is already allocated"**: change the local port, for example `-p 8502:8501`, and open `http://localhost:8502`.
+- **Docker does not start**: make sure Docker Desktop/Engine is running before executing commands.
 
 ### Alternative: pip editable install (local development/testing)
 
