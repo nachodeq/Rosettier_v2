@@ -282,6 +282,30 @@ def test_filter_selected_wells_applies_plate_selection():
     assert out["well"].tolist() == ["A02"]
 
 
+def test_exclude_wells_from_analysis_keeps_all_when_exclusion_empty():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "time": [0.0, 0.0, 0.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._exclude_wells_from_analysis(tidy, excluded_wells=[])
+    assert sorted(out["well"].unique().tolist()) == ["A01", "A02", "A03"]
+
+
+def test_exclude_wells_from_analysis_removes_excluded_wells():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03"],
+            "time": [0.0, 0.0, 0.0],
+            "value": [0.1, 0.2, 0.3],
+        }
+    )
+    out = app._exclude_wells_from_analysis(tidy, excluded_wells=["A02"])
+    assert out["well"].tolist() == ["A01", "A03"]
+
+
 def test_resolve_feature_column_prefers_signal_prefixed_name():
     features = pd.DataFrame({"well": ["A01"], "OD_auc": [1.23], "auc": [9.99]})
     assert app._resolve_feature_column(features, "OD", "auc") == "OD_auc"

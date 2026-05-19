@@ -1545,6 +1545,13 @@ def _filter_selected_wells(tidy_df: pd.DataFrame, selected_wells: list[str]) -> 
     return tidy_df.loc[tidy_df["well"].isin(wells_to_plot)].copy()
 
 
+def _exclude_wells_from_analysis(tidy_df: pd.DataFrame, excluded_wells: list[str]) -> pd.DataFrame:
+    """Return analysis dataframe excluding explicitly selected wells."""
+    if not excluded_wells:
+        return tidy_df.copy()
+    return tidy_df.loc[~tidy_df["well"].isin(excluded_wells)].copy()
+
+
 def _compute_selected_features(
     feature_source: pd.DataFrame,
     *,
@@ -1918,6 +1925,26 @@ def _render_analyze_data(st, plate_size: int) -> None:
             )
 
             wells_filtered_df = _filter_selected_wells(filtered_tidy_df, st.session_state[selected_wells_key])
+            excluded_wells_key = f"analyze_excluded_wells_{signal_key_slug}"
+            if excluded_wells_key not in st.session_state:
+                st.session_state[excluded_wells_key] = []
+            existing_excluded_wells = [
+                well for well in st.session_state[excluded_wells_key] if well in set(available_wells)
+            ]
+            if existing_excluded_wells != st.session_state[excluded_wells_key]:
+                st.session_state[excluded_wells_key] = existing_excluded_wells
+            excluded_wells = st.multiselect(
+                "Wells to exclude from feature calculations (optional)",
+                options=available_wells,
+                default=existing_excluded_wells,
+                key=f"analyze_excluded_well_selector_{signal_key_slug}",
+                help="Excluded wells are removed from feature calculations and downstream feature comparisons.",
+            )
+            st.session_state[excluded_wells_key] = excluded_wells
+            if st.button("Clear excluded wells", key=f"analyze_clear_excluded_wells_{signal_key_slug}"):
+                st.session_state[excluded_wells_key] = []
+                st.rerun()
+            st.caption(f"Excluded from feature calculations: {len(st.session_state[excluded_wells_key])} well(s).")
             metadata_columns = _metadata_columns_for_raw_curves(merged_df)
             selected_group_column = None
             if metadata_columns:
@@ -2095,6 +2122,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
             try:
                 feature_source = merged_df if merged_df is not None else filtered_tidy_df
+                feature_source = _exclude_wells_from_analysis(feature_source, st.session_state[excluded_wells_key])
                 features_df = _compute_selected_features(
                     feature_source,
                     selected_features=config.get("selected_features", []) if config else [],
@@ -2182,6 +2210,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                     "merged_df": merged_df,
                     "qc_export_df": _combine_qc_outputs_for_export(qc) if qc is not None else None,
                     "raw_curve_fig": fig,
+                    "excluded_wells": list(st.session_state.get(excluded_wells_key, [])),
                 }
             )
 
