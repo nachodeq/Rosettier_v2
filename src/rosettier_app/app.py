@@ -612,12 +612,16 @@ def _build_feature_comparison_figure(
     if facet_arg:
         facet_values = plot_df[facet_arg].drop_duplicates().tolist()
     facet_count = len(facet_values)
+    horizontal_spacing = 0.04
+    if facet_count > 1:
+        horizontal_spacing = min(0.08, 1 / (facet_count - 1))
+
     fig = make_subplots(
         rows=1,
         cols=facet_count,
         subplot_titles=None if facet_values == [None] else [f"{facet_arg}: {value}" for value in facet_values],
         shared_yaxes=True,
-        horizontal_spacing=0.08 if facet_count > 1 else 0.04,
+        horizontal_spacing=horizontal_spacing,
     )
 
     if color_arg:
@@ -1740,7 +1744,9 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 {
                     "index": 0,
                     "uploaded_file": legacy_uploaded_file,
-                    "measurement_name": st.session_state.get("analyze_measurement_name_0", "Measurement_1"),
+                    "measurement_name": st.session_state.get("analyze_measurement_name_0")
+                    or st.session_state.get("analyze_signal_name_0")
+                    or "Measurement_1",
                     "delimiter": st.session_state.get("analyze_delimiter_0", "auto"),
                     "decimal": st.session_state.get("analyze_decimal_0", "auto"),
                     "time_column": st.session_state.get("analyze_time_column_0", "Time"),
