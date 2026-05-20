@@ -105,8 +105,23 @@ def _make_plate_figure(rosetta_df: pd.DataFrame, spec: PlateSpec, selected_wells
 
     if color_variable is not None and color_variable in rosetta_df.columns:
         color_series = rosetta_df[color_variable].fillna("").astype(str)
-        has_value = color_series.str.len() > 0
-        colors = ["#4c78a8" if hv else "#d9d9d9" for hv in has_value]
+        non_empty_values = sorted({value for value in color_series if value != ""})
+        palette = [
+            "#4c78a8",
+            "#f58518",
+            "#54a24b",
+            "#e45756",
+            "#72b7b2",
+            "#b279a2",
+            "#ff9da6",
+            "#9d755d",
+            "#bab0ac",
+            "#b8de6f",
+            "#2f4b7c",
+            "#ffa600",
+        ]
+        value_color_map = {value: palette[idx % len(palette)] for idx, value in enumerate(non_empty_values)}
+        colors = [value_color_map.get(value, "#d9d9d9") for value in color_series]
         hover_text = [
             f"Well: {well}<br>{color_variable}: {value if value != '' else '—'}"
             for well, value in zip(plot_df["well"], color_series, strict=False)
