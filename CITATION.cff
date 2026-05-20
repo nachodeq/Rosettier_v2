@@ -10,7 +10,7 @@ authors:
 repository-code: "https://github.com/nachodeq/Rosettier_v2"
 url: "https://github.com/nachodeq/Rosettier_v2"
 version: "0.2.0"
-date-released: 2026-04-29
+date-released: 2026-05-20
 license: MIT
 abstract: >-
   Rosettier v2 is a local toolkit for creating Rosetta plate layouts,
