@@ -1158,3 +1158,24 @@ def test_build_analysis_bundle_zip_disambiguates_duplicate_signal_slugs():
         names = set(bundle.namelist())
         assert "signals/OD_1/parsed_tidy.csv" in names
         assert "signals/OD_2/parsed_tidy.csv" in names
+
+
+def test_load_rosetta_table_for_plate_normalizes_and_preserves_metadata():
+    spec = PlateSpec.from_size(96)
+    rows = ["well	strain"]
+    for idx, well in enumerate(spec.canonical_wells()):
+        rows.append(f"{well}	{'WT' if idx < 2 else 'KO'}")
+    uploaded = BytesIO("\n".join(rows).encode("utf-8"))
+
+    out, variables = app._load_rosetta_table_for_plate(uploaded, plate_size=96)
+
+    assert out.iloc[0]["well"] == "A01"
+    assert out.iloc[-1]["well"] == "H12"
+    assert "strain" in out.columns
+    assert variables == ["strain"]
+
+
+def test_load_rosetta_table_for_plate_requires_well_column():
+    uploaded = BytesIO("strain\nWT\n".encode("utf-8"))
+    with pytest.raises(ValueError):
+        app._load_rosetta_table_for_plate(uploaded, plate_size=96)

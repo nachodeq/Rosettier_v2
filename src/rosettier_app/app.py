@@ -14,7 +14,7 @@ import pandas as pd
 from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_max_value, extract_time_to_threshold
 from rosettier.io import parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
-from rosettier.plates import PlateSpec, validate_complete_well_set
+from rosettier.plates import PlateSpec, normalize_wells, validate_complete_well_set
 from rosettier.qc import qc_summary
 
 
@@ -63,6 +63,31 @@ def _assign_value_to_wells(
         return out[_ordered_rosetta_columns(out)]
     out.loc[out["well"].isin(wells), variable] = value
     return out[_ordered_rosetta_columns(out)]
+
+
+def _load_rosetta_table_for_plate(uploaded_file, plate_size: int) -> tuple[pd.DataFrame, list[str]]:
+    """Load and normalize an uploaded Rosetta table for a specific plate size."""
+    uploaded_df = _read_uploaded_table(uploaded_file)
+    well_col = _resolve_layout_well_column(uploaded_df)
+    if well_col is None:
+        raise ValueError("Uploaded Rosetta (metadata) must include a 'well' column.")
+
+    spec = PlateSpec.from_size(plate_size)
+    normalized_wells = normalize_wells(uploaded_df[well_col].tolist(), spec=spec)
+    validate_complete_well_set(normalized_wells, plate_size=plate_size)
+
+    parsed = uploaded_df.copy()
+    parsed["well"] = normalized_wells
+    metadata_columns = [col for col in parsed.columns if col not in {well_col, "well", "row", "column"}]
+    canonical = pd.DataFrame({"well": spec.canonical_wells()})
+    merged = canonical.merge(parsed[["well", *metadata_columns]], on="well", how="left")
+    merged["row"] = merged["well"].str[0]
+    merged["column"] = merged["well"].str[1:].astype(int)
+
+    for column in metadata_columns:
+        merged[column] = merged[column].fillna("")
+
+    return merged[_ordered_rosetta_columns(merged)], metadata_columns
 
 
 def _copy_rosetta_editor_plate_state(st, source_prefix: str, destination_prefix: str, destination_widget_prefix: str) -> None:
@@ -395,6 +420,23 @@ def _render_create_rosetta(st, plate_size: int) -> None:
 
     if creation_mode == "Direct plate creation":
         st.subheader("Rosetta (metadata) editor")
+        rosetta_upload = st.file_uploader(
+            "Import existing Rosetta (metadata) (CSV/TSV/TXT)",
+            type=["csv", "tsv", "txt"],
+            key="direct_rosetta_upload",
+        )
+        if rosetta_upload is not None and st.button("Load imported Rosetta (metadata)", key="direct_rosetta_upload_button"):
+            try:
+                imported_df, imported_variables = _load_rosetta_table_for_plate(rosetta_upload, plate_size=plate_size)
+                st.session_state["rosetta_df"] = imported_df
+                st.session_state["rosetta_variables"] = imported_variables
+                st.session_state["rosetta_plate_size"] = plate_size
+                st.session_state["rosetta_selected_wells"] = []
+                st.success("Imported Rosetta (metadata) loaded into editor.")
+                st.rerun()
+            except Exception as exc:  # pragma: no cover - defensive streamlit display
+                st.error(f"Could not import Rosetta (metadata): {exc}")
+
         table_to_show = _render_rosetta_editor(st, plate_size=plate_size, state_prefix="rosetta", widget_prefix="direct")
         st.session_state["rosetta_df"] = table_to_show
 
@@ -431,6 +473,23 @@ def _render_create_rosetta(st, plate_size: int) -> None:
     for idx, tab in enumerate(tabs, start=1):
         with tab:
             st.subheader(f"Rosetta (metadata) editor for Plate {idx}")
+            plate_upload = st.file_uploader(
+                f"Import Rosetta for Plate {idx} (CSV/TSV/TXT)",
+                type=["csv", "tsv", "txt"],
+                key=f"combine_plate_{idx}_upload",
+            )
+            if plate_upload is not None and st.button(f"Load imported Rosetta into Plate {idx}", key=f"combine_plate_{idx}_upload_button"):
+                try:
+                    imported_df, imported_variables = _load_rosetta_table_for_plate(plate_upload, plate_size=96)
+                    st.session_state[f"combine_plate_{idx}_df"] = imported_df
+                    st.session_state[f"combine_plate_{idx}_variables"] = imported_variables
+                    st.session_state[f"combine_plate_{idx}_plate_size"] = 96
+                    st.session_state[f"combine_plate_{idx}_selected_wells"] = []
+                    st.success(f"Imported Rosetta loaded for Plate {idx}.")
+                    st.rerun()
+                except Exception as exc:  # pragma: no cover - defensive streamlit display
+                    st.error(f"Could not import Rosetta for Plate {idx}: {exc}")
+
             copy_sources = [
                 (f"Plate {source_idx}", f"combine_plate_{source_idx}")
                 for source_idx in range(1, 5)
