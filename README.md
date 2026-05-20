@@ -12,8 +12,8 @@ Rosettier v2 is an open-source toolkit for plate-reader growth curve workflows t
 ## Installation (quick)
 
 ```bash
-conda env create -f environment.yml
-conda activate rosettier-v2
+python -m pip install --no-build-isolation -e ".[app,dev]"
+pytest -v
 rosettier-app
 ```
 

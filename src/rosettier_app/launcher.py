@@ -23,7 +23,7 @@ def _build_bootstrap_options() -> dict[str, Any]:
 def _run_streamlit_app(app_path: Path) -> None:
     """Run Streamlit directly in-process."""
     bootstrap.run(
-        str(app_path),
+        app_path.as_posix(),
         False,
         [],
         _build_bootstrap_options(),
@@ -36,7 +36,7 @@ def main() -> None:
 
     try:
         app_path = resolve_app_path()
-        _log(f"Resolved app path: {app_path}")
+        _log(f"Resolved app path: {app_path.as_posix()}")
         _log("Launching Streamlit via in-process bootstrap API.")
 
         _run_streamlit_app(app_path)

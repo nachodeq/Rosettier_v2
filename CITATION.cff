@@ -3,8 +3,10 @@ title: Rosettier v2
 message: "If you use this software, please cite it using the metadata from this file."
 type: software
 authors:
-  - family-names: Rosettier
-    given-names: Contributors
+  - family-names: de Quinto Cáceres
+    given-names: Nacho
+    email: idequintoc@gmail.com
+    orcid: "https://orcid.org/0009-0003-2162-6263"
 repository-code: "https://github.com/nachodeq/Rosettier_v2"
 url: "https://github.com/nachodeq/Rosettier_v2"
 version: "0.2.0"
@@ -14,6 +16,7 @@ abstract: >-
   Rosettier v2 is a local toolkit for creating Rosetta plate layouts,
   parsing plate-reader measurements, and generating analysis-ready outputs.
 keywords:
+  - bioinformatics
   - high-throughput screening
   - plate reader
   - rosetta table

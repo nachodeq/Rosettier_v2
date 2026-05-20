@@ -5,11 +5,38 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rosettier"
 version = "0.2.0"
-description = "Core plate processing utilities for Rosettier"
+description = "Toolkit for plate-reader growth curve workflows with Rosetta layout integration."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Nacho de Quinto Cáceres", email = "idequintoc@gmail.com" },
+]
+keywords = [
+  "bioinformatics",
+  "plate reader",
+  "growth curves",
+  "high-throughput screening",
+  "streamlit",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
 dependencies = [
   "pandas",
 ]
+
+[project.urls]
+Homepage = "https://github.com/nachodeq/Rosettier_v2"
+Repository = "https://github.com/nachodeq/Rosettier_v2"
+Issues = "https://github.com/nachodeq/Rosettier_v2/issues"
+Documentation = "https://github.com/nachodeq/Rosettier_v2/tree/main/docs"
 
 [project.optional-dependencies]
 dev = [
