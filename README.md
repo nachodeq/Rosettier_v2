@@ -54,17 +54,23 @@ For full Docker usage and troubleshooting, see `docs/docker.md`.
 
 Create Rosetta → Import measurements → Analyze data → Export results
 
+## Interface screenshots
+
+![Import view](docs/screenshots/01_import_view.png)
+![Create Rosetta (metadata) 96](docs/screenshots/02_create_rosetta_96.png)
+![Create Rosetta (metadata) 384](docs/screenshots/03_create_rosetta_384.png)
+![Analysis and QC](docs/screenshots/04_analysis_qc_view.png)
+![Export results](docs/screenshots/05_export_results_view.png)
+
 ## Documentation
 
 - Installation and troubleshooting: `docs/installation.md`
 - Docker guide: `docs/docker.md`
 - Input formats: `docs/input_formats.md`
-- Screenshots: `docs/screenshots/README.md`
 - Example datasets: `examples/README.md`
 - Publication notes: `docs/publication_notes.md`
 - Video tutorial example `docs/Tutorial_analysis_rosettier.mp4`
 
-Screenshots and naming conventions are described in `docs/screenshots/README.md`.
 
 Examples are available in `examples/`.
 
