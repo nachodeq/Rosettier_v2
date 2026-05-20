@@ -11,9 +11,10 @@ WORKDIR /app
 
 COPY pyproject.toml README.md /app/
 COPY src /app/src
+COPY examples /app/examples
 
 RUN python -m pip install --upgrade pip && \
-    python -m pip install -e ".[app]"
+    python -m pip install --no-build-isolation -e ".[app,dev]"
 
 EXPOSE 8501
 

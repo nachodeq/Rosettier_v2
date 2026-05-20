@@ -14,8 +14,7 @@ Update version consistently in:
 ## 2) Refresh environment and install
 
 ```bash
-python -m pip install -e ".[dev,app,analysis]"
-python -m pip install --no-build-isolation -e ".[app]"
+python -m pip install --no-build-isolation -e ".[app,dev]"
 ```
 
 ## 3) Run tests
