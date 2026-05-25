@@ -8,6 +8,7 @@ Rosettier v2 is an open-source toolkit for plate-reader growth curve workflows t
 - Plate-reader time-series parsing and tidy conversion.
 - Merge of measurements with Rosetta metadata.
 - QC summaries and feature extraction (endpoint, AUC, max slope, max value, time-to-threshold).
+- Visualization and comparison of features and growth curves. 
 
 ## Installation from downloaded package (quick)
 
