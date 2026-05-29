@@ -4,8 +4,10 @@ import pandas as pd
 import pytest
 
 from rosettier.export import (
+    dataframe_to_delimited_text,
     export_table,
     prepare_plate_matrix,
+    sanitize_for_delimited_export,
     summarize_by_group,
     validate_export_path,
 )
@@ -43,6 +45,28 @@ def test_export_table_csv_and_tsv(tmp_path: Path):
 
     assert loaded_csv.shape == df.shape
     assert loaded_tsv.shape == df.shape
+    pd.testing.assert_frame_equal(df, before)
+
+
+def test_delimited_exports_escape_spreadsheet_formula_text(tmp_path: Path):
+    df = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "A03", "A04", "A05"],
+            "metadata": ["=cmd", "+cmd", "-cmd", "@cmd", "safe"],
+            "value": [-1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    before = df.copy(deep=True)
+
+    sanitized = sanitize_for_delimited_export(df)
+    csv_text = dataframe_to_delimited_text(df)
+    csv_path = tmp_path / "formula.csv"
+    export_table(df, csv_path)
+
+    assert sanitized["metadata"].tolist() == ["'=cmd", "'+cmd", "'-cmd", "'@cmd", "safe"]
+    assert sanitized["value"].tolist() == [-1.0, 2.0, 3.0, 4.0, 5.0]
+    assert "'=cmd" in csv_text
+    assert "'=cmd" in csv_path.read_text(encoding="utf-8")
     pd.testing.assert_frame_equal(df, before)
 
 

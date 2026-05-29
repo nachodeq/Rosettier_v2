@@ -13,6 +13,27 @@ _SUPPORTED_EXTENSIONS = {
     ".tsv": "tsv",
     ".parquet": "parquet",
 }
+_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def _escape_spreadsheet_formula(value: object) -> object:
+    """Return a spreadsheet-safe string value for delimited text exports."""
+    if isinstance(value, str) and value.lstrip().startswith(_FORMULA_PREFIXES):
+        return f"'{value}"
+    return value
+
+
+def sanitize_for_delimited_export(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy with text cells escaped to reduce CSV/TSV formula injection risk."""
+    sanitized = df.copy(deep=True)
+    for column in sanitized.select_dtypes(include=["object", "string"]).columns:
+        sanitized[column] = sanitized[column].map(_escape_spreadsheet_formula)
+    return sanitized
+
+
+def dataframe_to_delimited_text(df: pd.DataFrame, *, sep: str = ",") -> str:
+    """Serialize a dataframe as CSV/TSV text after spreadsheet-formula escaping."""
+    return sanitize_for_delimited_export(df).to_csv(index=False, sep=sep)
 
 
 def validate_export_path(path: str | Path) -> str:
@@ -26,19 +47,18 @@ def validate_export_path(path: str | Path) -> str:
 
 def export_table(df: pd.DataFrame, path: str | Path, format: str | None = None) -> None:
     """Export a dataframe to CSV/TSV/Parquet without mutating input."""
-    out = df.copy(deep=True)
     path_obj = Path(path)
 
     export_format = format.lower() if format is not None else validate_export_path(path_obj)
 
     if export_format == "csv":
-        out.to_csv(path_obj, index=False)
+        path_obj.write_text(dataframe_to_delimited_text(df), encoding="utf-8")
         return
     if export_format == "tsv":
-        out.to_csv(path_obj, index=False, sep="\t")
+        path_obj.write_text(dataframe_to_delimited_text(df, sep="\t"), encoding="utf-8")
         return
     if export_format == "parquet":
-        out.to_parquet(path_obj, index=False)
+        df.copy(deep=True).to_parquet(path_obj, index=False)
         return
 
     raise ValueError(f"Unsupported export format: {export_format}")
