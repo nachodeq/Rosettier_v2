@@ -10,4 +10,4 @@ dependencies:
   - pytest
   - pip
   - pip:
-      - -e .[app]
+      - -e .[app,analysis]

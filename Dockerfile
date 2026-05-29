@@ -14,7 +14,7 @@ COPY src /app/src
 COPY examples /app/examples
 
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    python -m pip install --no-build-isolation -e ".[app,dev]"
+    python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
 
 EXPOSE 8501
 

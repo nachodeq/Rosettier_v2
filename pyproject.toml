@@ -47,6 +47,7 @@ app = [
   "plotly",
   "matplotlib",
 ]
+analysis = []
 
 [project.scripts]
 rosettier-app = "rosettier_app.launcher:main"

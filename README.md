@@ -6,14 +6,15 @@ Rosettier v2 is an open-source toolkit for plate-reader growth curve workflows t
 
 - Rosetta (metadata) support for 96-well and 384-well plates.
 - Plate-reader time-series parsing and tidy conversion.
+- Point-measurement analysis mode for single endpoint/snapshot measurements per well.
 - Merge of measurements with Rosetta metadata.
 - QC summaries and feature extraction (endpoint, AUC, max slope, max value, time-to-threshold).
-- Visualization and comparison of features and growth curves. 
+- Visualization and comparison of features, growth curves, and point-measurement plate maps.
 
 ## Installation from downloaded package (quick)
 
 ```bash
-python -m pip install --no-build-isolation -e ".[app,dev]"
+python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
 pytest -v
 rosettier-app
 ```
@@ -31,7 +32,7 @@ For detailed installation instructions and troubleshooting, see `docs/installati
 ```bash
 conda create -n rosettier-v2 python=3.11 -y
 conda activate rosettier-v2
-python -m pip install --no-build-isolation -e ".[app,dev]"
+python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
 pytest -v
 rosettier-app
 ```
@@ -55,12 +56,17 @@ For full Docker usage and troubleshooting, see `docs/docker.md`.
 
 Create Rosetta → Import measurements → Analyze data → Export results
 
+Rosettier supports two analysis paths in the local app:
+
+1. **Growth curves / time series**: import plate-reader exports with one time/cycle column and one column per well, merge them with Rosetta metadata, run QC, calculate derived features, compare groups, and export tidy tables plus figures.
+2. **Point measurements**: import one or more single-timepoint/snapshot measurement files (for example OD, fluorescence, or luminescence endpoints), merge each signal with Rosetta metadata, visualize plate heatmaps, compare metadata groups, and export combined results.
+
 
 ## Documentation
 
 - Installation and troubleshooting: `docs/installation.md`
 - Docker guide: `docs/docker.md`
-- Input formats: `docs/input_formats.md`
+- Input formats, including point-measurement tables: `docs/input_formats.md`
 - Example datasets: `examples/README.md`
 - Publication notes: `docs/publication_notes.md`
 - Video tutorial example `docs/Tutorial_analysis_rosettier.mp4`
