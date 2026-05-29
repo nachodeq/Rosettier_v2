@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_max_value, extract_time_to_threshold
-from rosettier.io import parse_plate_reader_wide
+from rosettier.io import parse_endpoint_measurements, parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
 from rosettier.plates import PlateSpec, normalize_wells, validate_complete_well_set
 from rosettier.qc import qc_summary
@@ -545,6 +545,7 @@ def _render_create_rosetta(st, plate_size: int) -> None:
 
 
 _FEATURE_LABELS = {
+    "value": "Value",
     "endpoint": "Endpoint",
     "auc": "AUC",
     "max_slope": "Max slope",
@@ -2139,7 +2140,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                             showlegend=show_legend,
                             customdata=well_df[["well", "metadata_label"]].to_numpy(),
                             hovertemplate=(
-                                f"Well: %{{customdata[0]}}"
+                                "Well: %{customdata[0]}"
                                 + (f"<br>{resolved_group_column}: %{{customdata[1]}}" if resolved_group_column else "")
                                 + "<extra></extra>"
                             ),
@@ -2583,6 +2584,355 @@ def _render_analyze_data(st, plate_size: int) -> None:
     )
 
 
+def _build_point_measurement_plate_figure(tidy_df: pd.DataFrame, *, signal_name: str):
+    """Build a plate-position heatmap for single-timepoint measurements."""
+    import plotly.express as px
+
+    plot_df = tidy_df.copy()
+    plot_df["column_label"] = plot_df["column"].astype(int)
+    fig = px.scatter(
+        plot_df,
+        x="column_label",
+        y="row",
+        color="value",
+        text="well",
+        color_continuous_scale="Blues",
+        hover_data={"well": True, "value": ":.5g", "row": False, "column_label": False},
+        labels={"column_label": "Column", "row": "Row", "value": signal_name},
+        title=f"Point measurements: {signal_name}",
+    )
+    fig.update_traces(marker={"size": 28, "line": {"width": 0.6, "color": "#333333"}}, textposition="middle center")
+    fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=sorted(plot_df["row"].unique()))
+    fig.update_xaxes(dtick=1)
+    fig.update_layout(height=560, width=980, margin={"l": 40, "r": 20, "t": 60, "b": 40})
+    return fig
+
+
+def _render_analyze_point_measurements(st, plate_size: int) -> None:
+    """Mode: parse and compare one or more single-timepoint endpoint measurement files."""
+    st.header("Analyze Point Measurements")
+    st.caption(
+        "Use this mode for one measurement per well. Supported inputs: long tables such as "
+        "`Well;OD;plate` and plate-shaped matrices with rows A-H/A-P and numeric columns."
+    )
+
+    if "point_results" not in st.session_state:
+        st.session_state["point_results"] = {}
+
+    session_rosetta_available = "rosetta_df" in st.session_state
+    st.markdown("### 1. Rosetta (metadata) source")
+    rosetta_source = st.radio(
+        "Choose Rosetta (metadata) source",
+        options=["Use current session Rosetta (metadata)", "Upload existing Rosetta (metadata) CSV/TSV/TXT"],
+        key="point_rosetta_source",
+    )
+    if rosetta_source == "Use current session Rosetta (metadata)" and not session_rosetta_available:
+        st.info("No Rosetta (metadata) exists in this session yet. Upload a file or create one first.")
+
+    layout_file = None
+    if rosetta_source == "Upload existing Rosetta (metadata) CSV/TSV/TXT":
+        layout_file = st.file_uploader(
+            "Upload Rosetta (metadata) file (CSV/TSV/TXT; keyed by `well`)",
+            type=["csv", "tsv", "txt"],
+            key="point_layout_upload",
+        )
+
+    signal_count = int(
+        st.number_input(
+            "Number of point measurement files",
+            min_value=1,
+            max_value=8,
+            value=int(st.session_state.get("point_signal_count", 1)),
+            step=1,
+            key="point_signal_count",
+        )
+    )
+
+    st.markdown("### 2. Inputs")
+    measurement_entries: list[dict[str, object]] = []
+    for idx in range(signal_count):
+        with st.expander(f"Point measurement {idx + 1}", expanded=(idx == 0)):
+            uploaded_file = st.file_uploader(
+                f"Point measurement file {idx + 1} (CSV/TSV/TXT)",
+                type=["csv", "tsv", "txt"],
+                key=f"point_measurements_upload_{idx}",
+                help="Long format example: Well;OD;plate. Matrix format example: first column A-H/A-P, headers 1-12/1-24.",
+            )
+            signal_name = st.text_input(
+                "Measurement name",
+                value=f"Measurement_{idx + 1}",
+                help="Examples: OD, GFP, luminescence.",
+                key=f"point_measurement_name_{idx}",
+            )
+            value_column_name = st.text_input(
+                "Value column name for long format (optional)",
+                value="OD" if idx == 0 else "",
+                help="For `Well;OD;plate`, use OD. Leave blank to auto-detect the only non-Well measurement column.",
+                key=f"point_value_column_{idx}",
+            )
+            delimiter_choice = st.selectbox(
+                "Delimiter",
+                options=["auto", "tab", "comma", "semicolon"],
+                index=0,
+                key=f"point_delimiter_{idx}",
+            )
+            decimal_choice = st.selectbox(
+                "Decimal separator",
+                options=["auto", "comma", "point"],
+                index=0,
+                key=f"point_decimal_{idx}",
+            )
+            measurement_entries.append(
+                {
+                    "index": idx,
+                    "uploaded_file": uploaded_file,
+                    "measurement_name": signal_name,
+                    "value_column": value_column_name,
+                    "delimiter": delimiter_choice,
+                    "decimal": decimal_choice,
+                }
+            )
+
+    st.markdown("### 3. Run")
+    run_analysis = st.button("Run point measurement analysis", type="primary", key="point_run_button")
+    if run_analysis:
+        valid_measurements = [entry for entry in measurement_entries if entry["uploaded_file"] is not None]
+        if not valid_measurements:
+            st.info("Upload at least one point measurement file to run analysis.")
+        else:
+            if rosetta_source == "Use current session Rosetta (metadata)" and session_rosetta_available:
+                layout_df = st.session_state["rosetta_df"].copy()
+            elif rosetta_source == "Upload existing Rosetta (metadata) CSV/TSV/TXT" and layout_file is not None:
+                layout_df = _read_uploaded_table(layout_file)
+            else:
+                layout_df = None
+
+            signal_payloads: list[dict[str, object]] = []
+            for entry in valid_measurements:
+                uploaded_file = entry["uploaded_file"]
+                signal_payloads.append(
+                    {
+                        "index": entry["index"],
+                        "signal_name": str(entry["measurement_name"]).strip() or f"Measurement_{entry['index'] + 1}",
+                        "value_column": str(entry["value_column"]).strip() or None,
+                        "delimiter": entry["delimiter"],
+                        "decimal": entry["decimal"],
+                        "measurement_text": uploaded_file.getvalue().decode("utf-8"),
+                    }
+                )
+            st.session_state["point_results"] = {
+                "signals": signal_payloads,
+                "layout_df": layout_df,
+                "layout_well_column": _resolve_layout_well_column(layout_df),
+            }
+
+    results = st.session_state["point_results"]
+    st.markdown("### 4. Validate, visualize, compare, and export")
+    if "signals" not in results:
+        st.info("Configure inputs and click 'Run point measurement analysis'.")
+        return
+
+    rendered_signal_results: list[dict[str, object]] = []
+    signal_payloads = results.get("signals", [])
+    signal_tabs = st.tabs([str(payload["signal_name"]) for payload in signal_payloads])
+    for signal_tab, payload in zip(signal_tabs, signal_payloads, strict=False):
+        with signal_tab:
+            signal_index = int(payload.get("index", 0))
+            signal_name = str(payload["signal_name"]).strip() or "Measurement"
+            signal_slug = signal_name.replace(" ", "_")
+            signal_key_slug = f"{signal_index}_{signal_slug}"
+            merged_df: pd.DataFrame | None = None
+            qc: dict | None = None
+            try:
+                tidy_df = parse_endpoint_measurements(
+                    payload["measurement_text"],
+                    plate_size=plate_size,
+                    value_col=payload.get("value_column"),
+                    delimiter=str(payload["delimiter"]),
+                    decimal=str(payload["decimal"]),
+                )
+                st.write(
+                    f"Parsed summary: {len(tidy_df)} rows, {tidy_df['well'].nunique()} wells, "
+                    f"single timepoint at {tidy_df['time'].iloc[0]} minutes."
+                )
+                with st.expander("Show parsed point table", expanded=False):
+                    st.dataframe(_rename_value_column_for_signal(tidy_df, signal_name=signal_name), use_container_width=True)
+            except Exception as exc:  # pragma: no cover - defensive streamlit display
+                st.error(f"Failed to parse point measurements for {signal_name}: {exc}")
+                continue
+
+            layout_df = results.get("layout_df")
+            layout_well_column = results.get("layout_well_column")
+            if layout_df is not None:
+                try:
+                    validated_layout = load_layout(layout_df, plate_size=plate_size, well_col=layout_well_column)
+                    merged_df = merge_measurements_with_layout(
+                        tidy_df,
+                        validated_layout,
+                        plate_size=plate_size,
+                        layout_well_col=layout_well_column,
+                    )
+                    with st.expander("Show merged point table", expanded=False):
+                        st.dataframe(_rename_value_column_for_signal(merged_df, signal_name=signal_name), use_container_width=True)
+                except Exception as exc:  # pragma: no cover - defensive streamlit display
+                    st.error(f"Failed to validate/merge Rosetta (metadata) for {signal_name}: {exc}")
+
+            st.markdown("#### Plate view")
+            fig = _build_point_measurement_plate_figure(tidy_df, signal_name=signal_name)
+            _render_plot_download_buttons(
+                st,
+                fig=fig,
+                filename_stem=f"{signal_slug}_point_plate",
+                key_prefix=f"download_point_plate_{signal_key_slug}",
+                show_preview=True,
+            )
+
+            with st.expander("QC summary (compact)", expanded=False):
+                try:
+                    qc = qc_summary(tidy_df)
+                    missing_overall = qc["missing"]["overall"]
+                    missing_count = int(missing_overall["n_missing"].sum()) if "n_missing" in missing_overall.columns else 0
+                    outlier_count = int(len(qc["outlier_wells"]))
+                    st.write(f"Missing values: **{missing_count}** | Outlier wells table rows: **{outlier_count}**")
+                    st.dataframe(missing_overall, use_container_width=True)
+                    st.dataframe(qc["outlier_wells"].head(12), use_container_width=True)
+                except Exception as exc:  # pragma: no cover - defensive streamlit display
+                    st.error(f"Failed to compute QC summary for {signal_name}: {exc}")
+
+            feature_column = f"{signal_name}_value"
+            features_df = tidy_df[["well", "row", "column", "value"]].rename(columns={"value": feature_column})
+            tidy_export_df = _rename_value_column_for_signal(tidy_df, signal_name=signal_name)
+            st.download_button(
+                label="Download tidy point measurements (CSV)",
+                data=tidy_export_df.to_csv(index=False),
+                file_name=f"rosettier_point_tidy_{signal_slug}.csv",
+                mime="text/csv",
+                key=f"download_point_tidy_csv_{signal_key_slug}",
+                on_click="ignore",
+            )
+            if merged_df is not None:
+                st.download_button(
+                    label="Download merged point measurements (CSV)",
+                    data=_rename_value_column_for_signal(merged_df, signal_name=signal_name).to_csv(index=False),
+                    file_name=f"rosettier_point_merged_{signal_slug}.csv",
+                    mime="text/csv",
+                    key=f"download_point_merged_csv_{signal_key_slug}",
+                    on_click="ignore",
+                )
+            st.download_button(
+                label="Download value table (CSV)",
+                data=features_df.to_csv(index=False),
+                file_name=f"rosettier_point_values_{signal_slug}.csv",
+                mime="text/csv",
+                key=f"download_point_values_csv_{signal_key_slug}",
+                on_click="ignore",
+            )
+            rendered_signal_results.append(
+                {
+                    "signal_name": signal_name,
+                    "signal_slug": signal_slug,
+                    "features_df": features_df,
+                    "merged_df": merged_df,
+                    "value_column": feature_column,
+                }
+            )
+
+    st.markdown("### Compare point measurements")
+    available_comparison = [
+        result
+        for result in rendered_signal_results
+        if isinstance(result.get("features_df"), pd.DataFrame) and result.get("merged_df") is not None
+    ]
+    if not available_comparison:
+        st.info("Comparison plotting requires a parsed point measurement and merged Rosetta (metadata) columns.")
+        return
+
+    comparison_signal_options, comparison_signal_map = _comparison_signal_options(available_comparison)
+    selected_signal_option = st.selectbox(
+        "Measurement",
+        options=comparison_signal_options,
+        format_func=lambda option_id: str(comparison_signal_map[option_id]["label"]),
+        key="point_compare_signal",
+    )
+    selected_signal = comparison_signal_map[selected_signal_option]["signal"]
+    selected_features_df = selected_signal["features_df"]
+    selected_merged_df = selected_signal["merged_df"]
+    selected_value_column = str(selected_signal["value_column"])
+    metadata_columns = _metadata_columns_for_raw_curves(selected_merged_df)
+    if not metadata_columns:
+        st.info("Comparison plotting requires merged Rosetta (metadata) columns.")
+        return
+
+    selected_group_columns = st.multiselect(
+        "Grouping columns (example: strain, treatment)",
+        options=metadata_columns,
+        default=[],
+        key="point_compare_group_columns",
+    )
+    if not selected_group_columns:
+        st.info("Select at least one grouping column.")
+        return
+
+    selected_color_column = st.selectbox(
+        "Color column (optional)",
+        options=["None", *metadata_columns],
+        index=0,
+        key="point_compare_color_column",
+    )
+    if selected_color_column == "None":
+        selected_color_column = None
+    selected_facet_column = st.selectbox(
+        "Facet column (optional)",
+        options=["None", *metadata_columns],
+        index=0,
+        key="point_compare_facet_column",
+    )
+    if selected_facet_column == "None":
+        selected_facet_column = None
+
+    comparison_df, missing_group_counts = _prepare_feature_comparison_table(
+        features_df=selected_features_df,
+        merged_df=selected_merged_df,
+        feature_column=selected_value_column,
+        group_columns=selected_group_columns,
+        color_column=selected_color_column,
+        facet_column=selected_facet_column,
+    )
+    missing_messages = [f"{column}: {count}" for column, count in missing_group_counts.items() if count]
+    if missing_messages:
+        st.warning("Some wells are missing grouping metadata: " + ", ".join(missing_messages))
+
+    fig, plot_df = _build_feature_comparison_figure(
+        comparison_df=comparison_df,
+        group_columns=selected_group_columns,
+        feature_column=selected_value_column,
+        feature_label="Value",
+        signal_name=str(selected_signal["signal_name"]),
+        feature_name="value",
+        color_column=selected_color_column,
+        facet_column=selected_facet_column,
+    )
+    if selected_color_column and selected_color_column in plot_df.columns and plot_df[selected_color_column].nunique() > 12:
+        st.caption("Legend hidden because selected color column has many categories.")
+    _render_plot_download_buttons(
+        st,
+        fig=fig,
+        filename_stem=f"{selected_signal['signal_slug']}_point_comparison",
+        key_prefix=f"download_point_compare_plot_{selected_signal['signal_slug']}",
+        show_preview=True,
+    )
+    with st.expander("Show comparison table", expanded=False):
+        st.dataframe(comparison_df, use_container_width=True)
+    st.download_button(
+        label="Download comparison table (CSV)",
+        data=comparison_df.to_csv(index=False),
+        file_name=f"rosettier_point_compare_{selected_signal['signal_slug']}.csv",
+        mime="text/csv",
+        key=f"download_point_compare_table_{selected_signal['signal_slug']}",
+        on_click="ignore",
+    )
+
+
 def main() -> None:
     """Render the Rosettier v2 Streamlit shell."""
     try:
@@ -2598,12 +2948,14 @@ def main() -> None:
 
     st.sidebar.header("Settings")
     plate_size = st.sidebar.selectbox("Plate size", options=[96, 384], index=0, key="sidebar_plate_size")
-    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta (metadata)", "Analyze Data"], index=0, key="sidebar_mode")
+    mode = st.sidebar.selectbox("Mode", options=["Create Rosetta (metadata)", "Analyze Growth Curves", "Analyze Point Measurements"], index=0, key="sidebar_mode")
 
     if mode == "Create Rosetta (metadata)":
         _render_create_rosetta(st, plate_size=plate_size)
-    else:
+    elif mode == "Analyze Growth Curves":
         _render_analyze_data(st, plate_size=plate_size)
+    else:
+        _render_analyze_point_measurements(st, plate_size=plate_size)
 
 
 if __name__ == "__main__":
