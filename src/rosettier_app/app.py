@@ -1012,6 +1012,24 @@ def _plotly_image_bytes(fig, *, image_format: str) -> bytes:
                     )
                 continue
 
+            if trace_type == "heatmap":
+                z_values = np.asarray(getattr(trace, "z", []), dtype=float)
+                if z_values.size == 0:
+                    continue
+
+                image = axis.imshow(z_values, aspect="auto", cmap="Blues", origin="upper")
+                x_labels = [str(value) for value in _as_list(getattr(trace, "x", []))]
+                y_labels = [str(value) for value in _as_list(getattr(trace, "y", []))]
+                if x_labels:
+                    axis.set_xticks(list(range(len(x_labels))))
+                    axis.set_xticklabels(x_labels, rotation=0, ha="center")
+                if y_labels:
+                    axis.set_yticks(list(range(len(y_labels))))
+                    axis.set_yticklabels(y_labels)
+                if hasattr(figure, "colorbar"):
+                    figure.colorbar(image, ax=axis, fraction=0.046, pad=0.04)
+                continue
+
             if trace_type in {"scatter", "scattergl"}:
                 raw_x_values = _x_values_to_numeric(getattr(trace, "x", []), subplot_key=subplot_key)
                 raw_y_values = _as_list(getattr(trace, "y", []))
@@ -2585,26 +2603,41 @@ def _render_analyze_data(st, plate_size: int) -> None:
 
 
 def _build_point_measurement_plate_figure(tidy_df: pd.DataFrame, *, signal_name: str):
-    """Build a plate-position heatmap for single-timepoint measurements."""
-    import plotly.express as px
+    """Build an export-friendly plate heatmap for single-timepoint measurements."""
+    import plotly.graph_objects as go
 
     plot_df = tidy_df.copy()
     plot_df["column_label"] = plot_df["column"].astype(int)
-    fig = px.scatter(
-        plot_df,
-        x="column_label",
-        y="row",
-        color="value",
-        text="well",
-        color_continuous_scale="Blues",
-        hover_data={"well": True, "value": ":.5g", "row": False, "column_label": False},
-        labels={"column_label": "Column", "row": "Row", "value": signal_name},
-        title=f"Point measurements: {signal_name}",
+    rows = sorted(plot_df["row"].astype(str).unique())
+    columns = sorted(plot_df["column_label"].unique())
+    value_matrix = plot_df.pivot_table(index="row", columns="column_label", values="value", aggfunc="first")
+    well_matrix = plot_df.pivot_table(index="row", columns="column_label", values="well", aggfunc="first")
+    value_matrix = value_matrix.reindex(index=rows, columns=columns)
+    well_matrix = well_matrix.reindex(index=rows, columns=columns).fillna("")
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                x=columns,
+                y=rows,
+                z=value_matrix.to_numpy(dtype=float),
+                text=well_matrix.to_numpy(dtype=str),
+                colorscale="Blues",
+                colorbar={"title": signal_name},
+                hovertemplate="Well: %{text}<br>Value: %{z:.5g}<extra></extra>",
+            )
+        ]
     )
-    fig.update_traces(marker={"size": 28, "line": {"width": 0.6, "color": "#333333"}}, textposition="middle center")
-    fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=sorted(plot_df["row"].unique()))
+    fig.update_layout(
+        title=f"Point measurements: {signal_name}",
+        xaxis_title="Column",
+        yaxis_title="Row",
+        height=560,
+        width=980,
+        margin={"l": 40, "r": 20, "t": 60, "b": 40},
+    )
+    fig.update_yaxes(autorange="reversed", categoryorder="array", categoryarray=rows)
     fig.update_xaxes(dtick=1)
-    fig.update_layout(height=560, width=980, margin={"l": 40, "r": 20, "t": 60, "b": 40})
     return fig
 
 
@@ -2771,6 +2804,7 @@ def _render_analyze_point_measurements(st, plate_size: int) -> None:
                         validated_layout,
                         plate_size=plate_size,
                         layout_well_col=layout_well_column,
+                        require_complete_measurements=False,
                     )
                     with st.expander("Show merged point table", expanded=False):
                         st.dataframe(_rename_value_column_for_signal(merged_df, signal_name=signal_name), use_container_width=True)

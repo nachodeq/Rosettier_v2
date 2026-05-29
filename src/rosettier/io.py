@@ -8,7 +8,7 @@ import re
 import pandas as pd
 
 from .exceptions import DuplicatedTimepointError, NonNumericMeasurementError, PlateSizeMismatchError
-from .plates import PlateSpec, infer_plate_size, normalize_well, validate_complete_well_set
+from .plates import PlateSpec, infer_plate_size, normalize_well, normalize_wells, validate_complete_well_set
 
 _TIME_HMS_PATTERN = re.compile(r"^\s*(?:(\d+):)?(\d+):(\d+(?:[.,]\d+)?)\s*$")
 
@@ -97,14 +97,22 @@ def _read_delimited_source(source: pd.DataFrame | str, *, delimiter: str = "auto
     sep = _resolve_delimiter(delimiter)
     if sep is None:
         return pd.read_csv(StringIO(source), sep=None, engine="python", dtype=str)
-    return pd.read_csv(StringIO(source), sep=sep, dtype=str)
+
+    parsed = pd.read_csv(StringIO(source), sep=sep, dtype=str)
+    if len(parsed.columns) == 1:
+        selected_separator = sep
+        first_nonblank_line = next((line for line in source.splitlines() if line.strip()), "")
+        alternate_separators = {"\t", ",", ";"} - {selected_separator}
+        if any(separator in first_nonblank_line for separator in alternate_separators):
+            return pd.read_csv(StringIO(source), sep=None, engine="python", dtype=str)
+    return parsed
 
 
 def _resolve_column_case_insensitive(columns: list[object], target: str) -> object | None:
     """Return the first column whose stripped lowercase name matches ``target``."""
-    normalized_target = target.strip().lower()
+    normalized_target = target.strip().lstrip("\ufeff").lower()
     for column in columns:
-        if str(column).strip().lower() == normalized_target:
+        if str(column).strip().lstrip("\ufeff").lower() == normalized_target:
             return column
     return None
 
@@ -136,7 +144,7 @@ def _normalize_endpoint_long(
             )
         resolved_value_col = candidates[0]
 
-    normalized_wells = validate_complete_well_set(raw[well_col].tolist(), plate_size=plate_size)
+    normalized_wells = normalize_wells(raw[well_col].tolist(), spec=PlateSpec.from_size(plate_size))
     values = raw[resolved_value_col].map(lambda value: _normalize_decimal_text(value, decimal=decimal))
     numeric_values = _coerce_numeric(pd.DataFrame({"value": values}))["value"]
 
@@ -219,7 +227,7 @@ def _parse_endpoint_matrix(
             records.append({"well": well, "raw_value": row[source_column]})
 
     found_wells = [str(record["well"]) for record in records]
-    normalized_wells = validate_complete_well_set(found_wells, plate_size=plate_size)
+    normalized_wells = normalize_wells(found_wells, spec=spec)
     values = pd.Series([record["raw_value"] for record in records]).map(lambda value: _normalize_decimal_text(value, decimal=decimal))
     numeric_values = _coerce_numeric(pd.DataFrame({"value": values}))["value"]
     tidy = pd.DataFrame({"well": normalized_wells, "time": float(default_time), "value": numeric_values})

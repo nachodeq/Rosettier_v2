@@ -558,6 +558,129 @@ def test_build_feature_comparison_figure_positions_title_above_legend():
     assert fig.layout.legend.orientation == "h"
     assert fig.layout.margin.t == 140
 
+
+def test_build_point_measurement_plate_figure_uses_exportable_heatmap_trace():
+    tidy = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "B01", "B02"],
+            "row": ["A", "A", "B", "B"],
+            "column": [1, 2, 1, 2],
+            "time": [0.0, 0.0, 0.0, 0.0],
+            "value": [1.2, 1.4, 0.2, 0.3],
+        }
+    )
+
+    fig = app._build_point_measurement_plate_figure(tidy, signal_name="OD")
+
+    assert len(fig.data) == 1
+    trace = fig.data[0]
+    assert trace.type == "heatmap"
+    assert list(trace.x) == [1, 2]
+    assert list(trace.y) == ["A", "B"]
+    assert trace.z.tolist() == [[1.2, 1.4], [0.2, 0.3]]
+
+
+def test_plotly_image_bytes_renders_heatmap_traces(monkeypatch):
+    import sys
+    import types
+    import plotly.graph_objects as go
+
+    class DummyAxis:
+        def __init__(self):
+            self.images = []
+            self.xticks = []
+            self.xticklabels = []
+            self.yticks = []
+            self.yticklabels = []
+
+        def imshow(self, z_values, **kwargs):
+            self.images.append((z_values.tolist(), kwargs))
+            return object()
+
+        def plot(self, *_args, **_kwargs):
+            return None
+
+        def bar(self, *_args, **_kwargs):
+            return None
+
+        def boxplot(self, *_args, **_kwargs):
+            return None
+
+        def set_xticks(self, ticks):
+            self.xticks = list(ticks)
+
+        def set_xticklabels(self, labels, **_kwargs):
+            self.xticklabels = list(labels)
+
+        def set_yticks(self, ticks):
+            self.yticks = list(ticks)
+
+        def set_yticklabels(self, labels):
+            self.yticklabels = list(labels)
+
+        def set_title(self, *_args, **_kwargs):
+            return None
+
+        def set_xlabel(self, *_args, **_kwargs):
+            return None
+
+        def set_ylabel(self, *_args, **_kwargs):
+            return None
+
+        def grid(self, *_args, **_kwargs):
+            return None
+
+        def get_legend_handles_labels(self):
+            return [], []
+
+    class DummyFigure:
+        def __init__(self):
+            self.axis = DummyAxis()
+            self.colorbar_calls = []
+
+        def subplots(self, *_args, **_kwargs):
+            return [[self.axis]]
+
+        def colorbar(self, image, **kwargs):
+            self.colorbar_calls.append((image, kwargs))
+
+        def tight_layout(self, *_args, **_kwargs):
+            return None
+
+        def savefig(self, buffer, **_kwargs):
+            buffer.write(b"dummy-png")
+
+    created_figures: list[DummyFigure] = []
+
+    class DummyPyplot:
+        def subplots(self, *_args, **_kwargs):
+            figure = DummyFigure()
+            created_figures.append(figure)
+            return figure, [[figure.axis]]
+
+        def close(self, *_args, **_kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "matplotlib", types.SimpleNamespace(pyplot=DummyPyplot()))
+    monkeypatch.setitem(sys.modules, "matplotlib.pyplot", DummyPyplot())
+
+    fig = go.Figure(data=[go.Heatmap(x=[1, 2], y=["A", "B"], z=[[1.2, 1.4], [0.2, 0.3]])])
+
+    png_bytes = app._plotly_image_bytes(fig, image_format="png")
+
+    assert png_bytes == b"dummy-png"
+    assert created_figures
+    axis = created_figures[0].axis
+    assert axis.images == [
+        ([[1.2, 1.4], [0.2, 0.3]], {"aspect": "auto", "cmap": "Blues", "origin": "upper"})
+    ]
+    assert axis.xticks == [0, 1]
+    assert axis.xticklabels == ["1", "2"]
+    assert axis.yticks == [0, 1]
+    assert axis.yticklabels == ["A", "B"]
+    assert created_figures[0].colorbar_calls
+
+
 def test_plotly_image_bytes_uses_requested_format():
     class DummyFigure:
         def to_image(self, **kwargs):
