@@ -52,7 +52,7 @@ def test_delimited_exports_escape_spreadsheet_formula_text(tmp_path: Path):
     df = pd.DataFrame(
         {
             "well": ["A01", "A02", "A03", "A04", "A05"],
-            "metadata": ["=cmd", "+cmd", "-cmd", "@cmd", "safe"],
+            "=metadata": ["=cmd", "+cmd", "-cmd", "@cmd", "safe"],
             "value": [-1.0, 2.0, 3.0, 4.0, 5.0],
         }
     )
@@ -63,10 +63,12 @@ def test_delimited_exports_escape_spreadsheet_formula_text(tmp_path: Path):
     csv_path = tmp_path / "formula.csv"
     export_table(df, csv_path)
 
-    assert sanitized["metadata"].tolist() == ["'=cmd", "'+cmd", "'-cmd", "'@cmd", "safe"]
+    assert list(sanitized.columns) == ["well", "'=metadata", "value"]
+    assert sanitized["'=metadata"].tolist() == ["'=cmd", "'+cmd", "'-cmd", "'@cmd", "safe"]
     assert sanitized["value"].tolist() == [-1.0, 2.0, 3.0, 4.0, 5.0]
+    assert csv_text.startswith("well,'=metadata,value")
     assert "'=cmd" in csv_text
-    assert "'=cmd" in csv_path.read_text(encoding="utf-8")
+    assert csv_path.read_text(encoding="utf-8").startswith("well,'=metadata,value")
     pd.testing.assert_frame_equal(df, before)
 
 

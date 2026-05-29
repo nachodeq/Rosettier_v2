@@ -24,10 +24,11 @@ def _escape_spreadsheet_formula(value: object) -> object:
 
 
 def sanitize_for_delimited_export(df: pd.DataFrame) -> pd.DataFrame:
-    """Return a copy with text cells escaped to reduce CSV/TSV formula injection risk."""
+    """Return a copy with text cells and headers escaped to reduce CSV/TSV formula injection risk."""
     sanitized = df.copy(deep=True)
     for column in sanitized.select_dtypes(include=["object", "string"]).columns:
         sanitized[column] = sanitized[column].map(_escape_spreadsheet_formula)
+    sanitized.columns = [_escape_spreadsheet_formula(column) for column in sanitized.columns]
     return sanitized
 
 
