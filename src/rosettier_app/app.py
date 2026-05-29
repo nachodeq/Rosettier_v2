@@ -11,6 +11,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
+from rosettier.export import dataframe_to_delimited_text
 from rosettier.features import extract_auc, extract_endpoint, extract_max_slope, extract_max_value, extract_time_to_threshold
 from rosettier.io import parse_endpoint_measurements, parse_plate_reader_wide
 from rosettier.layout import load_layout, merge_measurements_with_layout
@@ -450,13 +451,13 @@ def _render_create_rosetta(st, plate_size: int) -> None:
         st.subheader("Export Rosetta (metadata)")
         st.download_button(
             label="Download Rosetta (metadata) (CSV)",
-            data=table_to_show.to_csv(index=False),
+            data=dataframe_to_delimited_text(table_to_show),
             file_name=f"rosetta_layout_{plate_size}.csv",
             mime="text/csv",
         )
         st.download_button(
             label="Download Rosetta (metadata) (TSV)",
-            data=table_to_show.to_csv(index=False, sep="\t"),
+            data=dataframe_to_delimited_text(table_to_show, sep="\t"),
             file_name=f"rosetta_layout_{plate_size}.tsv",
             mime="text/tab-separated-values",
         )
@@ -532,13 +533,13 @@ def _render_create_rosetta(st, plate_size: int) -> None:
     st.subheader("Export combined 384 Rosetta (metadata)")
     st.download_button(
         label="Download combined 384 Rosetta (metadata) (CSV)",
-        data=combined_df.to_csv(index=False),
+        data=dataframe_to_delimited_text(combined_df),
         file_name="rosetta_layout_384_combined.csv",
         mime="text/csv",
     )
     st.download_button(
         label="Download combined 384 Rosetta (metadata) (TSV)",
-        data=combined_df.to_csv(index=False, sep="\t"),
+        data=dataframe_to_delimited_text(combined_df, sep="\t"),
         file_name="rosetta_layout_384_combined.tsv",
         mime="text/tab-separated-values",
     )
@@ -1565,19 +1566,19 @@ def _build_analysis_bundle_zip(
 
             tidy_df = signal_result.get("tidy_df")
             if isinstance(tidy_df, pd.DataFrame):
-                bundle.writestr(f"{signal_dir}/parsed_tidy.csv", tidy_df.to_csv(index=False))
+                bundle.writestr(f"{signal_dir}/parsed_tidy.csv", dataframe_to_delimited_text(tidy_df))
 
             merged_df = signal_result.get("merged_df")
             if isinstance(merged_df, pd.DataFrame):
-                bundle.writestr(f"{signal_dir}/merged.csv", merged_df.to_csv(index=False))
+                bundle.writestr(f"{signal_dir}/merged.csv", dataframe_to_delimited_text(merged_df))
 
             features_df = signal_result.get("features_df")
             if isinstance(features_df, pd.DataFrame) and not features_df.empty:
-                bundle.writestr(f"{signal_dir}/features.csv", features_df.to_csv(index=False))
+                bundle.writestr(f"{signal_dir}/features.csv", dataframe_to_delimited_text(features_df))
 
             qc_export_df = signal_result.get("qc_export_df")
             if isinstance(qc_export_df, pd.DataFrame) and not qc_export_df.empty:
-                bundle.writestr(f"{signal_dir}/qc_summary.csv", qc_export_df.to_csv(index=False))
+                bundle.writestr(f"{signal_dir}/qc_summary.csv", dataframe_to_delimited_text(qc_export_df))
 
             raw_curve_fig = signal_result.get("raw_curve_fig")
             if raw_curve_fig is not None:
@@ -1592,7 +1593,7 @@ def _build_analysis_bundle_zip(
 
         if isinstance(comparison_df, pd.DataFrame) and not comparison_df.empty:
             table_name = comparison_name or "comparison_table"
-            bundle.writestr(f"comparison/{table_name}.csv", comparison_df.to_csv(index=False))
+            bundle.writestr(f"comparison/{table_name}.csv", dataframe_to_delimited_text(comparison_df))
         if comparison_fig is not None:
             for image_format in ["png", "svg"]:
                 try:
@@ -2258,7 +2259,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             tidy_export_df = _rename_value_column_for_signal(filtered_tidy_df, signal_name=signal_name)
             st.download_button(
                 label="Download tidy (CSV)",
-                data=tidy_export_df.to_csv(index=False),
+                data=dataframe_to_delimited_text(tidy_export_df),
                 file_name=f"rosettier_tidy_{signal_slug}.csv",
                 mime="text/csv",
                 key=f"download_tidy_csv_{signal_key_slug}",
@@ -2268,7 +2269,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 merged_export_df = _rename_value_column_for_signal(merged_df, signal_name=signal_name)
                 st.download_button(
                     label="Download merged data (CSV)",
-                    data=merged_export_df.to_csv(index=False),
+                    data=dataframe_to_delimited_text(merged_export_df),
                     file_name=f"rosettier_merged_{signal_slug}.csv",
                     mime="text/csv",
                     key=f"download_merged_csv_{signal_key_slug}",
@@ -2277,7 +2278,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
             if features_df is not None and features_df.shape[1] > 3:
                 st.download_button(
                     label="Download features (CSV)",
-                    data=features_df.to_csv(index=False),
+                    data=dataframe_to_delimited_text(features_df),
                     file_name=f"rosettier_features_{signal_slug}.csv",
                     mime="text/csv",
                     key=f"download_features_csv_{signal_key_slug}",
@@ -2287,7 +2288,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                 qc_export_df = _combine_qc_outputs_for_export(qc)
                 st.download_button(
                     label="Download QC summary",
-                    data=qc_export_df.to_csv(index=False),
+                    data=dataframe_to_delimited_text(qc_export_df),
                     file_name=f"rosettier_qc_summary_{signal_slug}.csv",
                     mime="text/csv",
                     key=f"download_qc_summary_csv_{signal_key_slug}",
@@ -2575,7 +2576,7 @@ def _render_analyze_data(st, plate_size: int) -> None:
                         )
                         st.download_button(
                             label="Download comparison table (CSV)",
-                            data=comparison_df.to_csv(index=False),
+                            data=dataframe_to_delimited_text(comparison_df),
                             file_name=f"{comparison_export_name}.csv",
                             mime="text/csv",
                             key=f"download_compare_table_{selected_signal_slug}_{selected_feature_name}_{'_'.join(selected_group_columns)}",
@@ -2838,7 +2839,7 @@ def _render_analyze_point_measurements(st, plate_size: int) -> None:
             tidy_export_df = _rename_value_column_for_signal(tidy_df, signal_name=signal_name)
             st.download_button(
                 label="Download tidy point measurements (CSV)",
-                data=tidy_export_df.to_csv(index=False),
+                data=dataframe_to_delimited_text(tidy_export_df),
                 file_name=f"rosettier_point_tidy_{signal_slug}.csv",
                 mime="text/csv",
                 key=f"download_point_tidy_csv_{signal_key_slug}",
@@ -2847,7 +2848,9 @@ def _render_analyze_point_measurements(st, plate_size: int) -> None:
             if merged_df is not None:
                 st.download_button(
                     label="Download merged point measurements (CSV)",
-                    data=_rename_value_column_for_signal(merged_df, signal_name=signal_name).to_csv(index=False),
+                    data=dataframe_to_delimited_text(
+                        _rename_value_column_for_signal(merged_df, signal_name=signal_name)
+                    ),
                     file_name=f"rosettier_point_merged_{signal_slug}.csv",
                     mime="text/csv",
                     key=f"download_point_merged_csv_{signal_key_slug}",
@@ -2855,7 +2858,7 @@ def _render_analyze_point_measurements(st, plate_size: int) -> None:
                 )
             st.download_button(
                 label="Download value table (CSV)",
-                data=features_df.to_csv(index=False),
+                data=dataframe_to_delimited_text(features_df),
                 file_name=f"rosettier_point_values_{signal_slug}.csv",
                 mime="text/csv",
                 key=f"download_point_values_csv_{signal_key_slug}",
@@ -2959,7 +2962,7 @@ def _render_analyze_point_measurements(st, plate_size: int) -> None:
         st.dataframe(comparison_df, use_container_width=True)
     st.download_button(
         label="Download comparison table (CSV)",
-        data=comparison_df.to_csv(index=False),
+        data=dataframe_to_delimited_text(comparison_df),
         file_name=f"rosettier_point_compare_{selected_signal['signal_slug']}.csv",
         mime="text/csv",
         key=f"download_point_compare_table_{selected_signal['signal_slug']}",
