@@ -62,3 +62,32 @@ def test_merge_measurements_with_layout_avoids_layout_suffix_collisions():
     merged = merge_measurements_with_layout(measurements, layout, plate_size=96)
     assert "time_layout_1" in merged.columns
     assert "time_layout" in merged.columns
+
+
+def test_merge_measurements_with_layout_can_accept_measurement_subset_when_requested():
+    measurements = pd.DataFrame(
+        {
+            "well": ["A01", "A02", "B01"],
+            "row": ["A", "A", "B"],
+            "column": [1, 2, 1],
+            "time": [0.0, 0.0, 0.0],
+            "value": [1.0, 2.0, 3.0],
+        }
+    )
+
+    merged = merge_measurements_with_layout(
+        measurements,
+        _layout_df(96),
+        plate_size=96,
+        require_complete_measurements=False,
+    )
+
+    assert merged["well"].tolist() == ["A01", "A02", "B01"]
+    assert merged["group"].tolist() == ["g1", "g1", "g1"]
+
+
+def test_merge_measurements_with_layout_rejects_subset_by_default():
+    measurements = pd.DataFrame({"well": ["A01"], "time": [0.0], "value": [1.0]})
+
+    with pytest.raises(PlateSizeMismatchError):
+        merge_measurements_with_layout(measurements, _layout_df(96), plate_size=96)

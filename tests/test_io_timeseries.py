@@ -212,6 +212,73 @@ def test_parse_endpoint_measurements_long_semicolon_with_plate_column():
     assert tidy.loc[tidy["well"] == "H12", "plate"].iloc[0] == "1"
 
 
+def test_parse_endpoint_measurements_partial_long_semicolon_auto_recovers_wrong_delimiter():
+    from rosettier.io import parse_endpoint_measurements
+
+    text = """Well;OD;plate
+A1;1.361;1
+B1;0.053;1
+C1;0.049;1
+D1;0.056;1
+E1;0.05;1
+F1;1.243;1
+G1;0.05;1
+H1;0.047;1
+A2;1.457;1
+B2;0.053;1
+C2;0.055;1
+D2;0.382;1
+E2;0.757;1
+F2;0.051;1
+G2;0.724;1
+H2;1.117;1
+"""
+
+    tidy = parse_endpoint_measurements(
+        text,
+        plate_size=96,
+        value_col="OD",
+        delimiter="comma",
+        decimal="point",
+    )
+
+    assert tidy["well"].tolist() == [
+        "A01",
+        "A02",
+        "B01",
+        "B02",
+        "C01",
+        "C02",
+        "D01",
+        "D02",
+        "E01",
+        "E02",
+        "F01",
+        "F02",
+        "G01",
+        "G02",
+        "H01",
+        "H02",
+    ]
+    assert tidy.loc[tidy["well"] == "A01", "value"].iloc[0] == pytest.approx(1.361)
+    assert tidy.loc[tidy["well"] == "H02", "value"].iloc[0] == pytest.approx(1.117)
+    assert tidy.loc[tidy["well"] == "H02", "plate"].iloc[0] == "1"
+
+
+def test_parse_endpoint_measurements_accepts_utf8_bom_well_header():
+    from rosettier.io import parse_endpoint_measurements
+
+    tidy = parse_endpoint_measurements(
+        "\ufeffWell;OD\nA1;1.2\nB1;0.3\n",
+        plate_size=96,
+        value_col="OD",
+        delimiter="semicolon",
+        decimal="point",
+    )
+
+    assert tidy["well"].tolist() == ["A01", "B01"]
+    assert tidy["value"].tolist() == pytest.approx([1.2, 0.3])
+
 def test_parse_endpoint_measurements_plate_matrix():
     from rosettier.io import parse_endpoint_measurements
 

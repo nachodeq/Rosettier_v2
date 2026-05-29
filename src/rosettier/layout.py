@@ -31,8 +31,15 @@ def merge_measurements_with_layout(
     plate_size: int,
     measurement_well_col: str = "well",
     layout_well_col: str = "well",
+    *,
+    require_complete_measurements: bool = True,
 ) -> pd.DataFrame:
-    """Merge long measurements with validated Rosetta (metadata)."""
+    """Merge long measurements with validated Rosetta (metadata).
+
+    By default measurements must cover the full selected plate. Set
+    ``require_complete_measurements=False`` for point-measurement workflows that
+    intentionally upload a subset of wells against a complete layout.
+    """
     if measurement_well_col not in measurements_long.columns:
         raise KeyError(f"Missing measurement well column: {measurement_well_col}")
 
@@ -44,12 +51,21 @@ def merge_measurements_with_layout(
     normalized_layout = load_layout(layout_df, plate_size=plate_size, well_col=layout_well_col)
     layout_wells = set(normalized_layout[layout_well_col])
 
-    if measurement_wells != expected:
-        raise PlateSizeMismatchError("Measurement wells must exactly match selected plate size")
-    if layout_wells != expected:
-        raise PlateSizeMismatchError("Layout wells must exactly match selected plate size")
-    if measurement_wells != layout_wells:
-        raise PlateSizeMismatchError("Layout wells must exactly match measurement wells")
+    if require_complete_measurements:
+        if measurement_wells != expected:
+            raise PlateSizeMismatchError("Measurement wells must exactly match selected plate size")
+        if layout_wells != expected:
+            raise PlateSizeMismatchError("Layout wells must exactly match selected plate size")
+        if measurement_wells != layout_wells:
+            raise PlateSizeMismatchError("Layout wells must exactly match measurement wells")
+    else:
+        invalid_wells = sorted(measurement_wells - expected)
+        if invalid_wells:
+            raise PlateSizeMismatchError(
+                f"Measurement wells do not match selected plate size; unexpected: {invalid_wells[:5]}..."
+            )
+        if layout_wells != expected:
+            raise PlateSizeMismatchError("Layout wells must exactly match selected plate size")
 
     layout_to_merge = normalized_layout.copy()
     overlapping_columns = (
