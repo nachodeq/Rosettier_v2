@@ -187,3 +187,44 @@ def test_parse_plate_reader_wide_merge_with_layout_metadata_fixture_smoke():
     merged = merge_measurements_with_layout(tidy, validated_layout, plate_size=384, layout_well_col="Well")
     assert "strain" in merged.columns
     assert merged["well"].nunique() == 384
+
+
+def test_parse_endpoint_measurements_long_semicolon_with_plate_column():
+    from rosettier.io import parse_endpoint_measurements
+
+    spec = PlateSpec.from_size(96)
+    rows = ["Well;OD;plate"]
+    for idx, well in enumerate(spec.canonical_wells(), start=1):
+        rows.append(f"{well};{idx / 1000:.3f};1")
+
+    tidy = parse_endpoint_measurements(
+        "\n".join(rows) + "\n",
+        plate_size=96,
+        value_col="OD",
+        delimiter="semicolon",
+        decimal="point",
+    )
+
+    assert set(["well", "row", "column", "time", "value", "plate"]).issubset(tidy.columns)
+    assert tidy["well"].nunique() == 96
+    assert tidy["time"].unique().tolist() == [0.0]
+    assert tidy.loc[tidy["well"] == "A01", "value"].iloc[0] == pytest.approx(0.001)
+    assert tidy.loc[tidy["well"] == "H12", "plate"].iloc[0] == "1"
+
+
+def test_parse_endpoint_measurements_plate_matrix():
+    from rosettier.io import parse_endpoint_measurements
+
+    spec = PlateSpec.from_size(96)
+    header = ";" + ";".join(str(col) for col in spec.columns)
+    lines = [header]
+    for row_idx, row_label in enumerate(spec.rows, start=1):
+        values = [f"{(row_idx * col) / 1000:.3f}" for col in spec.columns]
+        lines.append(";".join([row_label, *values]))
+
+    tidy = parse_endpoint_measurements("\n".join(lines) + "\n", plate_size=96, delimiter="semicolon", decimal="point")
+
+    assert set(tidy.columns) == {"well", "row", "column", "time", "value"}
+    assert tidy["well"].nunique() == 96
+    assert tidy.loc[tidy["well"] == "A01", "value"].iloc[0] == pytest.approx(0.001)
+    assert tidy.loc[tidy["well"] == "H12", "value"].iloc[0] == pytest.approx(0.096)

@@ -89,6 +89,172 @@ def _coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
     return coerced
 
 
+def _read_delimited_source(source: pd.DataFrame | str, *, delimiter: str = "auto") -> pd.DataFrame:
+    """Read a dataframe or delimited text using the shared delimiter selector."""
+    if isinstance(source, pd.DataFrame):
+        return source.copy()
+
+    sep = _resolve_delimiter(delimiter)
+    if sep is None:
+        return pd.read_csv(StringIO(source), sep=None, engine="python", dtype=str)
+    return pd.read_csv(StringIO(source), sep=sep, dtype=str)
+
+
+def _resolve_column_case_insensitive(columns: list[object], target: str) -> object | None:
+    """Return the first column whose stripped lowercase name matches ``target``."""
+    normalized_target = target.strip().lower()
+    for column in columns:
+        if str(column).strip().lower() == normalized_target:
+            return column
+    return None
+
+
+def _normalize_endpoint_long(
+    raw: pd.DataFrame,
+    *,
+    plate_size: int,
+    value_col: str | None,
+    decimal: str,
+    default_time: float,
+) -> pd.DataFrame:
+    """Parse tidy endpoint tables with one row per well."""
+    well_col = _resolve_column_case_insensitive(list(raw.columns), "well")
+    if well_col is None:
+        raise KeyError("Missing well column: Well")
+
+    reserved = {str(well_col).strip().lower(), "row", "column", "time"}
+    if value_col:
+        resolved_value_col = _resolve_column_case_insensitive(list(raw.columns), value_col)
+        if resolved_value_col is None:
+            raise KeyError(f"Missing value column: {value_col}")
+    else:
+        candidates = [column for column in raw.columns if str(column).strip().lower() not in reserved | {"plate"}]
+        if len(candidates) != 1:
+            raise ValueError(
+                "Endpoint long-format input must have exactly one measurement column besides Well, "
+                "or provide a value column name."
+            )
+        resolved_value_col = candidates[0]
+
+    normalized_wells = validate_complete_well_set(raw[well_col].tolist(), plate_size=plate_size)
+    values = raw[resolved_value_col].map(lambda value: _normalize_decimal_text(value, decimal=decimal))
+    numeric_values = _coerce_numeric(pd.DataFrame({"value": values}))["value"]
+
+    tidy = pd.DataFrame(
+        {
+            "well": normalized_wells,
+            "time": float(default_time),
+            "value": numeric_values,
+        }
+    )
+    tidy["row"] = tidy["well"].str[0]
+    tidy["column"] = tidy["well"].str[1:].astype(int)
+
+    metadata_columns = [
+        column
+        for column in raw.columns
+        if column not in {well_col, resolved_value_col} and str(column).strip().lower() not in {"row", "column", "time"}
+    ]
+    for column in metadata_columns:
+        tidy[str(column)] = raw[column].to_numpy()
+
+    return tidy[["well", "row", "column", "time", "value", *[str(column) for column in metadata_columns]]].sort_values("well").reset_index(drop=True)
+
+
+def _looks_like_row_label(value: object, spec: PlateSpec) -> bool:
+    if pd.isna(value):
+        return False
+    return str(value).strip().upper() in spec.rows
+
+
+def _parse_endpoint_matrix(
+    raw: pd.DataFrame,
+    *,
+    plate_size: int,
+    decimal: str,
+    default_time: float,
+) -> pd.DataFrame:
+    """Parse plate-shaped endpoint matrices with row labels and numeric column headers."""
+    spec = PlateSpec.from_size(plate_size)
+    working = raw.dropna(axis=0, how="all").dropna(axis=1, how="all").copy()
+    if working.empty:
+        raise ValueError("Endpoint matrix input is empty.")
+
+    row_label_col = None
+    for column in working.columns:
+        labels = working[column].map(lambda value: _looks_like_row_label(value, spec=spec))
+        if int(labels.sum()) >= len(spec.rows):
+            row_label_col = column
+            break
+    if row_label_col is None:
+        row_label_col = working.columns[0]
+
+    matrix_rows = working.loc[working[row_label_col].map(lambda value: _looks_like_row_label(value, spec=spec))].copy()
+    if matrix_rows.empty:
+        raise ValueError("Endpoint matrix input must include plate row labels such as A, B, C.")
+
+    column_map: dict[object, int] = {}
+    for column in matrix_rows.columns:
+        if column == row_label_col:
+            continue
+        text = str(column).strip()
+        match = re.search(r"\d+", text)
+        if not match:
+            continue
+        col_num = int(match.group(0))
+        if col_num in spec.columns:
+            column_map[column] = col_num
+
+    if not column_map:
+        raise ValueError("Endpoint matrix input must include numeric plate column headers.")
+
+    records: list[dict[str, object]] = []
+    width = len(str(max(spec.columns)))
+    for _, row in matrix_rows.iterrows():
+        row_label = str(row[row_label_col]).strip().upper()
+        if row_label not in spec.rows:
+            continue
+        for source_column, col_num in column_map.items():
+            well = f"{row_label}{col_num:0{width}d}"
+            records.append({"well": well, "raw_value": row[source_column]})
+
+    found_wells = [str(record["well"]) for record in records]
+    normalized_wells = validate_complete_well_set(found_wells, plate_size=plate_size)
+    values = pd.Series([record["raw_value"] for record in records]).map(lambda value: _normalize_decimal_text(value, decimal=decimal))
+    numeric_values = _coerce_numeric(pd.DataFrame({"value": values}))["value"]
+    tidy = pd.DataFrame({"well": normalized_wells, "time": float(default_time), "value": numeric_values})
+    tidy["row"] = tidy["well"].str[0]
+    tidy["column"] = tidy["well"].str[1:].astype(int)
+    return tidy[["well", "row", "column", "time", "value"]].sort_values("well").reset_index(drop=True)
+
+
+def parse_endpoint_measurements(
+    source: pd.DataFrame | str,
+    plate_size: int,
+    *,
+    value_col: str | None = None,
+    delimiter: str = "auto",
+    decimal: str = "auto",
+    default_time: float = 0.0,
+) -> pd.DataFrame:
+    """Parse single-timepoint endpoint measurements into canonical tidy format.
+
+    Supported inputs are long tables such as ``Well;OD;plate`` and plate-shaped
+    matrices with row labels (A-H/A-P) and numeric column headers.
+    """
+    raw = _read_delimited_source(source, delimiter=delimiter)
+    well_col = _resolve_column_case_insensitive(list(raw.columns), "well")
+    if well_col is not None:
+        return _normalize_endpoint_long(
+            raw,
+            plate_size=plate_size,
+            value_col=value_col,
+            decimal=decimal,
+            default_time=default_time,
+        )
+    return _parse_endpoint_matrix(raw, plate_size=plate_size, decimal=decimal, default_time=default_time)
+
+
 def parse_timeseries_wide(df: pd.DataFrame, plate_size: int, time_col: str = "time") -> pd.DataFrame:
     """Parse wide time-series data where rows are timepoints and columns are wells.
 
