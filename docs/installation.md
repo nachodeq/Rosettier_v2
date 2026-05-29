@@ -43,7 +43,7 @@ run_rosettier_windows.bat
 From the repository root:
 
 ```bash
-python -m pip install --no-build-isolation -e ".[app,dev]"
+python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
 pytest -v
 rosettier-app
 ```
@@ -69,7 +69,7 @@ python -c "import rosettier_app; print('rosettier_app import: OK')"
 - Reinstall app entry points:
 
   ```bash
-  python -m pip install --no-build-isolation -e ".[app,dev]"
+  python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
   ```
 
 - Verify script path with:
@@ -97,7 +97,7 @@ python -m streamlit run src/rosettier_app/app.py --server.port 8502
 - Retry install:
 
   ```bash
-  python -m pip install --no-build-isolation -e ".[app,dev]"
+  python -m pip install --no-build-isolation -e ".[app,dev,analysis]"
   ```
 
 - Confirm you are running from the repository root containing `pyproject.toml`.
